@@ -50,13 +50,15 @@
     font-weight:700;text-transform:uppercase;padding:7px 11px;border-bottom:1px solid var(--edge)}
   #stage{position:absolute;top:30px;left:0;right:0;bottom:0;
     display:flex;align-items:center;justify-content:center;padding:10px;
-    overflow:auto}
+    overflow:hidden}
   #heartbox{position:relative;display:inline-block;transform-origin:center center}
   /* the heart art — small monospace, the beat is a transform+filter pulse */
   #heart{white-space:pre;font-size:7px;line-height:1.0;color:var(--bright);
     letter-spacing:0;font-weight:700;
     text-shadow:0 0 5px rgba(125,255,138,.45);
     transition:filter .04s linear;transform-origin:50% 56%}
+  /* individual glyphs — the bloodflow trace brightens these in place */
+  #heart .g{color:inherit;transition:color .05s linear,text-shadow .05s linear}
   #heart.weak{color:#7fd98a}
   #heart.flat{color:var(--dim)}
 
@@ -382,7 +384,7 @@ log('scan complete — now write the real solver.');</textarea>
 
     <!-- terminal bar — fills the left column's foot, up to the sidebar -->
     <div id="term">
-      <div id="termhead"><span>TERMINAL</span><span class="hint">help · scan · breach · ls · cat · nano · inject · script · run</span></div>
+      <div id="termhead"><span>TERMINAL</span><span class="hint">type help for commands</span></div>
       <div id="termout"></div>
       <div class="terminline">
         <span class="pr">greynet@gn-2241 $</span>
@@ -617,18 +619,20 @@ function tprint(text,cls){
 }
 function techo(c){ tprint('greynet@gn-2241 $ '+c,'u'); }
 
+const HELP_LINES=[
+  'commands:',
+  '  scan              list nodes + state',
+  '  breach <node>     crack a sealed node (coding puzzle)',
+  '  ls <node>         list files on a breached node',
+  '  cat <file>        read a file',
+  '  nano <file>       edit a config file',
+  '  inject            open the regulator.js editor',
+  '  script            open the solver.js automation editor',
+  '  run / stop        control the routine',
+];
 const CMDS={
   help(){
-    tprint('commands:');
-    tprint('  scan              list nodes + state');
-    tprint('  breach <node>     crack a sealed node (coding puzzle)');
-    tprint('  ls <node>         list files on a breached node');
-    tprint('  cat <file>        read a file');
-    tprint('  nano <file>       edit a config file');
-    tprint('  inject            open the regulator.js editor');
-    tprint('  inject            open the regulator.js editor');
-    tprint('  script            open the solver.js automation editor');
-    tprint('  run / stop        control the routine');
+    HELP_LINES.forEach(l=>tprint(l));
     tprint('nodes: n_rate  n_rhythm  n_amp  n_cond','d');
   },
   scan(){
@@ -677,6 +681,8 @@ function findFile(file){
 }
 $('termin').addEventListener('keydown',e=>{
   if(e.key!=='Enter')return;
+  if(e.repeat)return;                    // ignore auto-repeat from a held key
+  e.preventDefault();
   const raw=e.target.value.trim();e.target.value='';
   if(!raw)return;
   techo(raw);
@@ -802,7 +808,7 @@ $('run').onclick=()=>{
 };
 $('stop').onclick=()=>{ haltSim();tprint('// routine stopped','d'); };
 $('reset').onclick=()=>{ haltSim();freshPatient();
-  for(const id in NODES){} tprint('// patient reset to baseline','d'); };
+  tprint('// patient reset to baseline','d'); };
 function haltSim(){
   clearInterval(sim);sim=null;running=false;
   $('run').disabled=(NODES.n_rate.state==='SEALED');$('stop').disabled=true;
@@ -891,14 +897,12 @@ function checkSignature(){
 }
 
 // ---- rendering -----------------------------------------------------
-// drawHeart() renders at the CURRENT beatPhase; advancing the phase is
-// the caller's job (the sim tick / idle loop) so the beat is never
-// advanced twice per frame.
-//
-// The art (HEART_ART) is pristine — drawn once. The beat is a pulsing
-// brightness/scale on the whole heart, magnitude from amplitude, timed
-// by beatPhase. The four node panels are inset overlay elements placed
-// by positionHotzones().
+// renderHeartArt() lays the art out once as a grid of per-glyph spans.
+// drawHeart() runs each frame at the current beatPhase: a brightness +
+// scale pulse on the whole heart, then drawBloodflow() lights the
+// travelling trace. Advancing beatPhase is the caller's job (sim tick
+// or idle loop) so the beat is never advanced twice per frame. The four
+// node panels are inset overlay elements placed by positionHotzones().
 
 const PANEL_STATE={
   SEALED:   {label:'SEALED',  col:'var(--red)'},
@@ -918,10 +922,139 @@ const PANEL_POS={
 };
 
 let heartRendered=false;
+let heartCells=[];   // {span,col,row,ch,lit} for every non-space glyph
 function renderHeartArt(){
-  // draw the pristine art once into #heart
-  $('heart').textContent=HEART_ART.join('\n');
+  // render the art as a grid of spans so individual glyphs can glow.
+  // spaces stay as plain text nodes (no span) to keep the DOM light.
+  const el=$('heart');
+  el.textContent='';
+  heartCells=[];
+  const frag=document.createDocumentFragment();
+  for(let r=0;r<HEART_ART.length;r++){
+    const line=HEART_ART[r];
+    for(let c=0;c<line.length;c++){
+      const ch=line[c];
+      if(ch===' '){ frag.appendChild(document.createTextNode(' ')); continue; }
+      const sp=document.createElement('span');
+      sp.className='g';
+      sp.textContent=ch;
+      frag.appendChild(sp);
+      heartCells.push({span:sp,col:c,row:r,ch:ch});
+    }
+    frag.appendChild(document.createTextNode('\n'));
+  }
+  el.appendChild(frag);
   heartRendered=true;
+}
+
+// ---- bloodflow trace ----------------------------------------------
+// Pulses of light travel the circulation path by swapping the ASCII
+// GLYPHS they pass over for a dense ramp (+ * # @) and lighting them
+// electric green — the art itself changes, nothing is drawn on top.
+// Each pulse advances ONE chamber per beat: it SNAPS to the next
+// waypoint at the top of the beat (synced to the heart's flash), then
+// holds. Three pulses run the loop spaced apart, so a full circuit
+// takes (waypoints-1) beats and it reads as steady circulation.
+//
+// Path waypoints are fractions of the art grid (x,y in 0..1):
+// vena cava -> right atrium -> right ventricle -> apex turn
+// -> left ventricle -> left atrium -> aorta out -> (loop).
+const FLOW_PATH=[
+  {x:0.46,y:0.06},   // vena cava — venous return
+  {x:0.40,y:0.20},   // right atrium
+  {x:0.34,y:0.42},   // right ventricle
+  {x:0.40,y:0.66},   // toward the apex
+  {x:0.54,y:0.82},   // apex turn
+  {x:0.62,y:0.60},   // left ventricle
+  {x:0.66,y:0.34},   // left atrium
+  {x:0.62,y:0.12},   // aorta — leaving
+];
+const FLOW_SEGS=FLOW_PATH.length-1;          // 7 segments == 7 beats per loop
+function lerp(a,b,t){ return a+(b-a)*t; }
+// squelch curve: the pulse SNAPS to the next chamber right at the top
+// of the beat — synced to the heart's brightness flash — then holds
+// near-still for the rest of the beat. Blood spurts on the beat, then
+// waits. Fast early, flat late.
+function squelch(t){
+  if(t<0.22){
+    const k=t/0.22;                          // 0..1 over the snap window
+    return 0.94*(1-(1-k)*(1-k)*(1-k));       // fast spurt to ~94%
+  }
+  return 0.94 + 0.06*((t-0.22)/0.78);        // creeps the last sliver
+}
+
+// position of a pulse that is `beatsAlong` beats into its circuit;
+// returns grid coords (col,row in 0..1). Loops over the path.
+function flowPos(beatsAlong){
+  const loop=((beatsAlong%FLOW_SEGS)+FLOW_SEGS)%FLOW_SEGS;
+  const si=Math.floor(loop);
+  const ft=squelch(loop-si);                 // hold, then snap on the beat
+  const a=FLOW_PATH[si], b=FLOW_PATH[(si+1)%FLOW_PATH.length];
+  return { x:lerp(a.x,b.x,ft), y:lerp(a.y,b.y,ft) };
+}
+
+// the active pulses: the lead, plus trailers a fixed number of beats back
+const PULSE_OFFSETS=[0, 2.4, 4.8];           // beats behind the lead
+// density ramp the pulse swaps glyphs through — faint edge to hot core
+const PULSE_RAMP=['+','*','#','@'];
+
+function drawBloodflow(){
+  if(!heartRendered) return;
+  const cols=HEART_ART[0].length, rows=HEART_ART.length;
+  // clear last frame: restore the original glyph and styling
+  for(const cell of heartCells){
+    if(cell.lit){
+      cell.span.style.cssText='';
+      if(cell.span.textContent!==cell.ch) cell.span.textContent=cell.ch;
+      cell.lit=false;
+    }
+  }
+  if(hw.bpm<24) return;                       // flatline — no flow
+
+  const amp=clamp(hw.amp,0,1.3);
+  // each pulse is a STREAK, not a dot: sampled at several points trailing
+  // back along the path from the head, each a small radius. Thin + long.
+  const RAD=2.2;                              // streak thickness, in cells
+  const STREAK=0.5;                           // length, in beats of path behind
+  const SAMP=7;                               // points along the streak
+
+  // build the sample points: for each pulse, SAMP points fading back
+  const pts=[];
+  PULSE_OFFSETS.forEach((off,idx)=>{
+    const lead = idx===0?1 : idx===1?0.7 : 0.45;
+    for(let s=0;s<SAMP;s++){
+      const back=s/(SAMP-1);                  // 0 head .. 1 tail
+      pts.push({
+        pos:flowPos(beatPhase-off-back*STREAK),
+        w:lead*(1-back*0.8),                  // head bright, tail faded
+      });
+    }
+  });
+
+  for(const cell of heartCells){
+    let best=0;
+    for(const p of pts){
+      const dx=cell.col-p.pos.x*cols, dy=cell.row-p.pos.y*rows;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d>RAD) continue;
+      const fall=1-d/RAD;                     // 1 at centre -> 0 at edge
+      best=Math.max(best, fall*fall*p.w);
+    }
+    if(best<0.06) continue;
+    const i=clamp(best*amp,0,1);
+    // swap the glyph itself for a dense character — the form changes as
+    // the pulse passes, so it's unmistakable, not just a brightness shift
+    const ri=Math.min(PULSE_RAMP.length-1,Math.floor(i*PULSE_RAMP.length));
+    if(cell.span.textContent!==PULSE_RAMP[ri]) cell.span.textContent=PULSE_RAMP[ri];
+    // and light it electric green so the trail glows as it travels
+    cell.span.style.color='rgb('
+      +Math.round(lerp(150,210,i))+','
+      +Math.round(lerp(240,255,i))+','
+      +Math.round(lerp(150,190,i))+')';
+    cell.span.style.textShadow='0 0 '+(2+i*7).toFixed(1)+'px rgba(120,255,140,'
+      +(0.55+i*0.45).toFixed(2)+')';
+    cell.lit=true;
+  }
 }
 
 function drawHeart(){
@@ -946,11 +1079,12 @@ function drawHeart(){
     cls = hw.amp<0.55 ? 'flat' : hw.amp<0.8 ? 'weak' : '';
   }
   el.className=cls;
+  drawBloodflow();                            // glyph-glow trace, same clock
 }
 
 // build / update the four inset panel overlays and their click-zones
 function positionHotzones(){
-  const box=$('heartbox'), heart=$('heart');
+  const heart=$('heart');
   const bw=heart.offsetWidth, bh=heart.offsetHeight;
   for(const id in PANEL_LABEL){
     let hz=document.querySelector(`.hotzone[data-node="${id}"]`);
@@ -983,7 +1117,11 @@ function fitHeart(){
   const scale=Math.min(availW/natW, availH/natH, 2.2);
   box.style.transform='scale('+Math.max(scale,0.1).toFixed(3)+')';
 }
-function relayoutHeart(){ fitHeart(); positionHotzones(); }
+function relayoutHeart(){
+  fitHeart();
+  positionHotzones();
+  drawBloodflow();     // refresh the glyph-glow trace at the current phase
+}
 function paintTelemetry(){
   // while a countermeasure dip is being held, don't overwrite the BPM
   // number — let the dipped reading linger so the jump is visible
