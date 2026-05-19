@@ -44,6 +44,12 @@
   #conn{flex:1;min-height:0;display:flex;flex-direction:row}
   #leftcol{flex:1;min-width:0;display:flex;flex-direction:column}
 
+  /* drag handles between resizable panels */
+  .gutter{flex:none;background:var(--edge);transition:background .12s}
+  .gutter:hover,.gutter.drag{background:var(--bright)}
+  .gutter-h{height:5px;cursor:row-resize}      /* heart <-> terminal */
+  .gutter-v{width:5px;cursor:col-resize}       /* left column <-> sidebar */
+
   /* left column, upper part: the animated system map */
   #mapwrap{flex:1;min-height:0;position:relative;overflow:hidden}
   #mapwrap h2,.sidebar h2{font-size:10px;letter-spacing:2px;color:var(--dim);
@@ -216,6 +222,7 @@
       padding:6px 12px;gap:8px}
     #strip .tag{font-size:9px}
     #zoomctl{display:none}                 /* pinch-zoom does the job here */
+    .gutter{display:none}                  /* no panel-resizing on mobile */
 
     /* everything stacks into one vertical scroll */
     #conn{display:block}
@@ -453,6 +460,9 @@ log('recon done — now write the breach, config and library steps.');</textarea
       </div>
     </div>
 
+    <!-- drag handle: heart height vs terminal height -->
+    <div class="gutter gutter-h" id="gutter-term" title="drag to resize"></div>
+
     <!-- terminal bar — fills the left column's foot, up to the sidebar -->
     <div id="term">
       <div id="termhead"><span>TERMINAL</span><span class="hint">type help for commands</span></div>
@@ -463,6 +473,9 @@ log('recon done — now write the breach, config and library steps.');</textarea
       </div>
     </div>
   </div>
+
+  <!-- drag handle: left column width vs sidebar width -->
+  <div class="gutter gutter-v" id="gutter-side" title="drag to resize"></div>
 
   <!-- sidebar — full height down the right side -->
   <div class="sidebar">
@@ -703,6 +716,7 @@ const HELP_LINES=[
   '  nano <file>       edit a config file',
   '  inject            open the regulator.js editor',
   '  run / stop        control the routine',
+  '  newgame           wipe saved progress and restart',
 ];
 const CMDS={
   help(){
@@ -758,6 +772,11 @@ const CMDS={
   },
   run(){ if(!$('run').disabled) $('run').onclick(); else tprint('run: nothing to run yet','e'); },
   stop(){ if(!$('stop').disabled) $('stop').onclick(); },
+  newgame(){
+    tprint('// wiping saved progress and restarting...','w');
+    wipeProgress();
+    setTimeout(()=>location.reload(),350);
+  },
 };
 function findFile(file){
   for(const id in NODES){
@@ -777,6 +796,13 @@ $('termin').addEventListener('keydown',e=>{
   const fn=CMDS[c.toLowerCase()];
   if(fn) fn(r[0]); else tprint(c+': command not found — try "help"','e');
 });
+// clicking anywhere in the terminal places the caret in the input —
+// unless the click was actually a text selection (so copy still works)
+$('term').addEventListener('mouseup',e=>{
+  if(window.getSelection().toString()) return;   // a selection — leave it
+  if(e.target.tagName==='INPUT') return;          // already in the input
+  $('termin').focus();
+});
 
 // ---- node interaction ----------------------------------------------
 document.querySelectorAll('.hotzone').forEach(el=>{
@@ -793,6 +819,7 @@ document.querySelectorAll('.hotzone').forEach(el=>{
 function setNodeState(id,s){
   NODES[id].state=s;
   positionHotzones();       // panels are overlays — refresh their state styling
+  saveProgress();
 }
 
 // ---- breach modal --------------------------------------------------
@@ -859,6 +886,7 @@ $('nx-save').onclick=()=>{
       conduction.drift?'w':'ok');
   }
   $('scrim-nano').classList.add('hide');$('termin').focus();
+  saveProgress();
 };
 
 // ---- script editor -------------------------------------------------
@@ -880,6 +908,7 @@ $('ed-save').onclick=()=>{
   libraryText=$('code').value;
   tprint('// regulator.js saved','ok');
   $('scrim-editor').classList.add('hide');$('termin').focus();
+  saveProgress();
 };
 
 // ---- run control ---------------------------------------------------
@@ -1325,6 +1354,7 @@ function endRun(win){
         'terminal to open <b>solver.js</b> and automate the whole thing.</p>';
       tprint('// ★ automation unlocked — type  script  to open solver.js','ok');
     }
+    saveProgress();             // persist new bests and the unlock
   }else{
     $('rx-title').textContent='✗ CYCLE BUDGET EXPIRED';
     $('rx-sub').textContent='// the signature was not met in time';
@@ -1435,7 +1465,8 @@ function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 // ---- script editor open / run --------------------------------------
 function openScript(){ $('scripterr').style.display='none';
   $('scrim-script').classList.remove('hide');$('scriptcode').focus(); }
-$('sc-close').onclick=()=>{ $('scrim-script').classList.add('hide');$('termin').focus(); };
+$('sc-close').onclick=()=>{ $('scrim-script').classList.add('hide');$('termin').focus();
+  saveProgress(); };
 $('sc-run').onclick=async()=>{
   $('scripterr').style.display='none';
   const src=$('scriptcode').value;
@@ -1701,6 +1732,52 @@ enhanceEditor($('scriptcode'),{api:true, hint:m=>{ const e=$('scripterr');
 enhanceEditor($('bx-code'),   {api:false});
 enhanceEditor($('nx-code'),   {api:false});
 
+// ---- resizable panels ----------------------------------------------
+// Two drag gutters: one sets the terminal height, one the sidebar
+// width. After a drag the heart refits via relayoutHeart().
+function makeGutter(gutterId,opts){
+  const g=$(gutterId);
+  let dragging=false;
+  const onMove=e=>{
+    if(!dragging) return;
+    const pt=e.touches?e.touches[0]:e;
+    opts.apply(pt);
+    relayoutHeart();
+  };
+  const stop=()=>{
+    dragging=false;g.classList.remove('drag');
+    document.body.style.userSelect='';
+    window.removeEventListener('mousemove',onMove);
+    window.removeEventListener('touchmove',onMove);
+    window.removeEventListener('mouseup',stop);
+    window.removeEventListener('touchend',stop);
+  };
+  const start=e=>{
+    dragging=true;g.classList.add('drag');
+    document.body.style.userSelect='none';
+    window.addEventListener('mousemove',onMove);
+    window.addEventListener('touchmove',onMove,{passive:false});
+    window.addEventListener('mouseup',stop);
+    window.addEventListener('touchend',stop);
+    e.preventDefault();
+  };
+  g.addEventListener('mousedown',start);
+  g.addEventListener('touchstart',start,{passive:false});
+}
+// terminal height: drag the horizontal gutter. The terminal grows
+// upward as you drag up, so height = distance from pointer to viewport
+// foot, clamped.
+makeGutter('gutter-term',{apply:pt=>{
+  const h=clamp(window.innerHeight-pt.clientY, 90, window.innerHeight*0.7);
+  $('term').style.height=h+'px';
+}});
+// sidebar width: drag the vertical gutter. width = distance from
+// pointer to the right edge, clamped.
+makeGutter('gutter-side',{apply:pt=>{
+  const w=clamp(window.innerWidth-pt.clientX, 220, window.innerWidth*0.55);
+  document.querySelector('.sidebar').style.width=w+'px';
+}});
+
 // ---- font-size / zoom control --------------------------------------
 // Scales the whole interface. Uses CSS zoom on the root so layout,
 // text and spacing all rescale proportionally and stay aligned.
@@ -1726,13 +1803,72 @@ document.addEventListener('keydown',e=>{
 applyZoom();
 window.addEventListener('resize',()=>requestAnimationFrame(relayoutHeart));
 
+// ---- progress persistence ------------------------------------------
+// Contracts take a while, so progress survives a window close via
+// localStorage. We persist PROGRESS (breached nodes, edited code,
+// countermeasure config, the unlock and personal bests) — never the
+// live physiology, so a reload always drops you at a fresh patient
+// with your progress intact.
+const SAVE_KEY='greynet-gn2241-v1';
+function saveProgress(){
+  try{
+    const data={
+      nodes:Object.fromEntries(Object.keys(NODES).map(id=>[id,NODES[id].state])),
+      failsafe:{enabled:failsafe.enabled,backup:failsafe.backup},
+      conduction:{drift:conduction.drift},
+      library:libraryText,
+      solver:$('scriptcode')?$('scriptcode').value:'',
+      scriptUnlocked,
+      best,
+    };
+    localStorage.setItem(SAVE_KEY,JSON.stringify(data));
+  }catch(e){ /* storage unavailable / full — fail quietly */ }
+}
+function loadProgress(){
+  let data;
+  try{ data=JSON.parse(localStorage.getItem(SAVE_KEY)||'null'); }
+  catch(e){ data=null; }
+  if(!data) return false;
+  // node states
+  if(data.nodes) for(const id in NODES)
+    if(data.nodes[id]) NODES[id].state=data.nodes[id];
+  // countermeasure config
+  if(data.failsafe){ failsafe.enabled=data.failsafe.enabled;
+    failsafe.backup=data.failsafe.backup; }
+  if(data.conduction) conduction.drift=data.conduction.drift;
+  // player code
+  if(typeof data.library==='string'){ libraryText=data.library;
+    if($('code')) $('code').value=data.library; }
+  if(typeof data.solver==='string' && $('scriptcode'))
+    $('scriptcode').value=data.solver;
+  // unlock + bests
+  if(data.scriptUnlocked) scriptUnlocked=true;
+  if(data.best) best=data.best;
+  // reflect restored state in the UI
+  if(NODES.n_rate.state!=='SEALED') unlockEditor();
+  positionHotzones();
+  setScore(null);                       // refreshes the "best" labels
+  return true;
+}
+function wipeProgress(){
+  try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
+}
+// final safety net — flush progress if the window closes mid-task
+window.addEventListener('beforeunload',saveProgress);
+
 // ---- boot ----------------------------------------------------------
 $('deploy').onclick=()=>{ $('scrim-intro').classList.add('hide');$('termin').focus();
   requestAnimationFrame(relayoutHeart); };
 freshPatient();
+const restored=loadProgress();
 requestAnimationFrame(relayoutHeart);
 tprint('GREYNET link established — contract GN-2241 "Quiet Hours" loaded','ok');
-tprint('type  help  for commands, or  scan  to see the target.','d');
+if(restored){
+  tprint('// progress restored from your last session — type  scan  to review','ok');
+  tprint('// (type  newgame  to wipe the save and start fresh)','d');
+}else{
+  tprint('type  help  for commands, or  scan  to see the target.','d');
+}
 
 // ---- idle heartbeat — the heart ALWAYS beats -----------------------
 // When the routine is running, stepHeart() drives the beat from the
