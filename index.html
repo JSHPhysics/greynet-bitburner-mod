@@ -925,8 +925,42 @@ $('run').onclick=()=>{
   sim=setInterval(stepHeart,55);
 };
 $('stop').onclick=()=>{ haltSim();tprint('// routine stopped','d'); };
-$('reset').onclick=()=>{ haltSim();freshPatient();usedScript=false;
-  tprint('// patient reset to baseline','d'); };
+
+// the editor/run controls re-lock when a node is re-sealed
+function lockEditor(){
+  $('run').disabled=true;
+  $('edlock').style.display='';
+}
+// once automation is unlocked, the RESET button does a FULL reset —
+// reflect that in its label so the player knows.
+function reflectUnlock(){
+  if(scriptUnlocked) $('reset').textContent='↺ FULL RESET';
+}
+// full reset — re-seal every node and restore the countermeasures, so
+// the target is a true cold start. Only offered once automation is
+// unlocked: it lets the player exercise a solver.js that does the
+// WHOLE run, breaches included, over and over.
+function fullReset(){
+  haltSim();
+  for(const id in NODES) NODES[id].state='SEALED';
+  failsafe.enabled=true; failsafe.backup=72;
+  conduction.drift=true;
+  lockEditor();
+  freshPatient();
+  positionHotzones();
+  usedScript=false;
+  saveProgress();
+}
+$('reset').onclick=()=>{
+  if(scriptUnlocked){
+    fullReset();
+    tprint('// FULL RESET — nodes re-sealed, countermeasures restored','w');
+    tprint('// target is cold — run solver.js to take it from scratch','d');
+  }else{
+    haltSim();freshPatient();usedScript=false;
+    tprint('// patient reset to baseline','d');
+  }
+};
 function haltSim(){
   clearInterval(sim);sim=null;running=false;
   $('run').disabled=(NODES.n_rate.state==='SEALED');$('stop').disabled=true;
@@ -1346,13 +1380,17 @@ function endRun(win){
     // earned mastery" principle (spec P6).
     if(!scriptUnlocked && !usedScript){
       scriptUnlocked=true;
+      reflectUnlock();
       $('rx-body').innerHTML+=
         '<div class="verdict win" style="margin-top:12px">'+
         'AUTOMATION TOOLKIT UNLOCKED</div>'+
         '<p>You have proven the contract by hand. The <b>ns.greynet</b> '+
         'scripting API is now available — type <code>script</code> in the '+
-        'terminal to open <b>solver.js</b> and automate the whole thing.</p>';
+        'terminal to open <b>solver.js</b> and automate the whole thing. '+
+        'The <b>RESET</b> control now does a full reset — re-sealing every '+
+        'node — so your solver can take the target from scratch each run.</p>';
       tprint('// ★ automation unlocked — type  script  to open solver.js','ok');
+      tprint('// RESET now re-seals all nodes for a clean solver run','d');
     }
     saveProgress();             // persist new bests and the unlock
   }else{
@@ -1842,7 +1880,7 @@ function loadProgress(){
   if(typeof data.solver==='string' && $('scriptcode'))
     $('scriptcode').value=data.solver;
   // unlock + bests
-  if(data.scriptUnlocked) scriptUnlocked=true;
+  if(data.scriptUnlocked){ scriptUnlocked=true; reflectUnlock(); }
   if(data.best) best=data.best;
   // reflect restored state in the UI
   if(NODES.n_rate.state!=='SEALED') unlockEditor();
