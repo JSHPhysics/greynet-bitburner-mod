@@ -51,7 +51,7 @@
   #stage{position:absolute;top:30px;left:0;right:0;bottom:0;
     display:flex;align-items:center;justify-content:center;padding:10px;
     overflow:auto}
-  #heartbox{position:relative;display:inline-block}
+  #heartbox{position:relative;display:inline-block;transform-origin:center center}
   /* the heart art — small monospace, the beat is a transform+filter pulse */
   #heart{white-space:pre;font-size:7px;line-height:1.0;color:var(--bright);
     letter-spacing:0;font-weight:700;
@@ -175,6 +175,42 @@
   #scriptcode{width:100%;height:300px}
   .errline{color:var(--red);font-size:11px;margin-top:7px;letter-spacing:.3px;display:none;
     border:1px solid var(--red);border-radius:2px;padding:6px 8px;background:rgba(224,85,106,.06)}
+
+  /* ===== mobile — narrow screens =====================================
+     Not built for serious play on a phone, but it should look good:
+     open the link and you get the beating heart filling the screen,
+     then scroll down through the panels. A nudge to open it on a PC. */
+  @media (max-width: 760px){
+    /* release the locked full-height layout so the page can scroll */
+    html{overflow:auto}
+    body{height:auto;min-height:100%;display:block}
+    #strip{position:sticky;top:0;z-index:20;flex-wrap:wrap;height:auto;
+      padding:6px 12px;gap:8px}
+    #strip .tag{font-size:9px}
+    #zoomctl{display:none}                 /* pinch-zoom does the job here */
+
+    /* everything stacks into one vertical scroll */
+    #conn{display:block}
+    #leftcol{display:block}
+
+    /* the heart gets its own near-full-screen panel, first thing you see */
+    #mapwrap{height:82vh}
+    #stage{position:relative;top:0;height:82vh;padding:8px}
+    #heart{font-size:9px}                  /* a touch bigger on mobile */
+    #mapwrap h2{font-size:9px;line-height:1.4}
+
+    /* terminal below the heart, comfortably tall */
+    #term{height:240px}
+
+    /* sidebar becomes a full-width section you scroll into */
+    .sidebar{width:auto;border-left:none;border-top:1px solid var(--edge2)}
+
+    /* modals: full-bleed and scrollable on a small screen */
+    .scrim{padding:8px}
+    .modal{max-height:94vh}
+    #code{height:180px}
+    #scriptcode{height:220px}
+  }
 </style>
 </head>
 <body>
@@ -567,7 +603,7 @@ function freshPatient(){
   hw={bpm:72,rhythmVar:0.05,amp:1.00,cond:120};
   setp={rate:72,gain:1.00};
   tick=0;stream=[];reviewVal=0;beatPhase=0;running=false;
-  drawHeart();positionHotzones();paintTelemetry();paintConditions(blank());
+  drawHeart();relayoutHeart();paintTelemetry();paintConditions(blank());
   setScore(null);
 }
 const blank=()=>({c:[0,0,0,0,0],win:false});
@@ -933,6 +969,21 @@ function positionHotzones(){
     hz.dataset.state=st;
   }
 }
+
+// scale the whole heartbox to fit the stage — so the heart fills the
+// space on any screen (and never overflows on a narrow phone). The
+// beat pulse lives on #heart's own transform, so it stays independent.
+function fitHeart(){
+  const stage=$('stage'), box=$('heartbox'), heart=$('heart');
+  if(!heartRendered) renderHeartArt();
+  box.style.transform='scale(1)';            // measure unscaled
+  const natW=heart.offsetWidth, natH=heart.offsetHeight;
+  if(!natW||!natH) return;
+  const availW=stage.clientWidth-20, availH=stage.clientHeight-20;
+  const scale=Math.min(availW/natW, availH/natH, 2.2);
+  box.style.transform='scale('+Math.max(scale,0.1).toFixed(3)+')';
+}
+function relayoutHeart(){ fitHeart(); positionHotzones(); }
 function paintTelemetry(){
   // while a countermeasure dip is being held, don't overwrite the BPM
   // number — let the dipped reading linger so the jump is visible
@@ -1319,8 +1370,8 @@ function applyZoom(){
   $('zoom-val').textContent = zoomLevel+'%';
   $('zoom-out').disabled = zoomLevel<=ZOOM_MIN;
   $('zoom-in').disabled  = zoomLevel>=ZOOM_MAX;
-  // the heart's pixel size changed — re-place the click-zones
-  requestAnimationFrame(positionHotzones);
+  // the heart's pixel size changed — refit and re-place the click-zones
+  requestAnimationFrame(relayoutHeart);
 }
 $('zoom-in').onclick =()=>{ zoomLevel=Math.min(ZOOM_MAX,zoomLevel+ZOOM_STEP);applyZoom(); };
 $('zoom-out').onclick=()=>{ zoomLevel=Math.max(ZOOM_MIN,zoomLevel-ZOOM_STEP);applyZoom(); };
@@ -1332,13 +1383,13 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='0'){ e.preventDefault();zoomLevel=100;applyZoom(); }
 });
 applyZoom();
-window.addEventListener('resize',()=>requestAnimationFrame(positionHotzones));
+window.addEventListener('resize',()=>requestAnimationFrame(relayoutHeart));
 
 // ---- boot ----------------------------------------------------------
 $('deploy').onclick=()=>{ $('scrim-intro').classList.add('hide');$('termin').focus();
-  requestAnimationFrame(positionHotzones); };
+  requestAnimationFrame(relayoutHeart); };
 freshPatient();
-requestAnimationFrame(positionHotzones);
+requestAnimationFrame(relayoutHeart);
 tprint('GREYNET link established — contract GN-2241 "Quiet Hours" loaded','ok');
 tprint('type  help  for commands, or  scan  to see the target.','d');
 
