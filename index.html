@@ -155,6 +155,32 @@
   .modal .mbtn{margin-top:15px;display:flex;gap:8px;justify-content:flex-end}
   .modal textarea{width:100%;background:#010801;border:1px solid var(--edge2);color:var(--hi);
     font-family:var(--mono);font-size:12px;padding:8px;border-radius:2px;line-height:1.45;tab-size:2}
+
+  /* ===== syntax highlighting ==========================================
+     A <pre.hl> sits exactly behind the textarea showing coloured code;
+     the textarea on top has transparent text but a visible caret. Both
+     must share font, size, padding, border, line-height and box model
+     so the glyphs line up perfectly. */
+  .edwrap{position:relative}
+  .edwrap textarea,.edwrap .hl{
+    margin:0;font-family:var(--mono);font-size:12px;line-height:1.45;
+    tab-size:2;padding:8px;border:1px solid transparent;border-radius:2px;
+    box-sizing:border-box;white-space:pre-wrap;word-break:break-word;
+    overflow-wrap:break-word;letter-spacing:0;}
+  .edwrap textarea{position:relative;z-index:2;background:transparent;
+    color:transparent;caret-color:var(--hi);border-color:var(--edge2);
+    resize:vertical;}
+  .edwrap textarea::selection{background:rgba(125,255,138,.25);color:transparent;}
+  .edwrap .hl{position:absolute;inset:0;z-index:1;background:#010801;
+    color:var(--ink);pointer-events:none;overflow:hidden;}
+  /* token colours */
+  .hl .t-key{color:#7dc4ff;}            /* keywords */
+  .hl .t-str{color:#e0c060;}            /* strings */
+  .hl .t-num{color:#c89bff;}            /* numbers */
+  .hl .t-com{color:#4f7d56;font-style:italic;}  /* comments */
+  .hl .t-fn {color:#7dffba;}            /* function / API names */
+  .hl .t-op {color:#9aa;}               /* punctuation */
+  .hl .t-cfg{color:#7dffba;}            /* config keys */
   .mres{font-size:11px;margin-top:8px;min-height:16px}
   .pairs{margin:8px 0;font-size:13px}
   .pairs .p{display:inline-block;border:1px solid var(--edge2);border-radius:2px;
@@ -238,12 +264,14 @@
     <div class="verb"><span class="n">run / stop</span>
       <span>execute the routine; drive the heart to the signature.</span></div>
     <div class="verb"><span class="n">script</span>
-      <span>open <code class="k">solver.js</code> and <b>automate</b> the whole
-        contract against the <code class="k">ns.greynet</code> API.</span></div>
-    <p style="margin-top:12px">Do it by hand first — then <b>script it</b>. Win
-      by meeting the <b>five-part failure signature</b> on the right. Every solve
-      is <b>scored on four axes</b> — time, trace, RAM, lines of code — for you
-      to beat next run. Type <code class="k">help</code> any time.</p>
+      <span><b>locked</b> until you beat the contract by hand — then it
+        opens <code class="k">solver.js</code> to automate the whole thing
+        against the <code class="k">ns.greynet</code> API.</span></div>
+    <p style="margin-top:12px">Do it by hand first — then <b>earn the
+      script</b>. Win by meeting the <b>five-part failure signature</b> on
+      the right. Every solve is <b>scored on four axes</b> — time, trace,
+      RAM, lines of code — for you to beat next run. Type
+      <code class="k">help</code> any time.</p>
     <div class="ph">Prototype — the breach puzzle is a placeholder for the full
       breach minigame (Pillar 3). Everything else is the intended loop.</div>
     <div class="mbtn"><button class="go" id="deploy">▶ CONNECT TO TARGET</button></div>
@@ -317,23 +345,66 @@ function regulate(t) {
       <span style="margin-left:auto;font-size:10px;color:var(--dim)">
         Tab completes ns.greynet.* · Ctrl-Space lists the API</span>
     </div>
-    <textarea id="scriptcode" spellcheck="false">// solver.js — automate the contract with the ns.greynet API.
-// This is the heart of GREYNET: do it by hand once, then SCRIPT it.
-// await every ns.greynet call. Print with log().
+    <textarea id="scriptcode" spellcheck="false">// ============================================================
+//  solver.js  —  automate the contract with the ns.greynet API
+// ------------------------------------------------------------
+//  The endgame of GREYNET: do the contract by hand once, then
+//  write a script that does it for you. Every manual action has
+//  a method here. All async calls must be awaited. Print to the
+//  terminal with log(text). sleep(ms) pauses the script.
 //
-// API:  scan() inspect(id) getBreachPuzzle(id) submitBreach(id,ans)
-//       ls(id) cat(id,file) getCountermeasure(id) writeConfig(id,file,txt)
-//       deployLibrary(src) run() stop() telemetry() signatureMet()
+//  RECON
+//    await ns.greynet.scan()
+//        -> [ {id, name, state}, ... ]   every node and its state
+//    await ns.greynet.inspect(id)
+//        -> {id, state, breachPuzzle, files}   one node in detail
 //
-// Example — breach every node, then read its files:
+//  BREACH
+//    await ns.greynet.getBreachPuzzle(id)
+//        -> {node, family, shown, probe}
+//        shown = sample [input,output] pairs from the captured
+//        handshake; probe = all inputs the answer is checked on.
+//    await ns.greynet.submitBreach(id, fn)
+//        -> true if fn reproduces the hidden rule for every probe
+//        input, false otherwise. On success the node is breached.
+//        fn is YOUR function: e.g.  n => n * 2 + 1
+//
+//  DISCOVERY  (node must be breached first)
+//    await ns.greynet.ls(id)            -> [filename, ...]
+//    await ns.greynet.cat(id, file)     -> file contents as text
+//
+//  COUNTERMEASURES  (node must be breached first)
+//    await ns.greynet.getCountermeasure(id)
+//        -> {node, form, file, active} | null
+//    await ns.greynet.writeConfig(id, file, text)
+//        -> true; rewrites a config file to defeat its
+//        countermeasure (same as editing it by hand in nano).
+//
+//  ENGAGEMENT
+//    await ns.greynet.deployLibrary(src)
+//        -> true; src is JS source defining regulate(t).
+//    await ns.greynet.run()             starts the routine
+//    await ns.greynet.stop()            stops it
+//
+//  MONITORING  (synchronous — no await needed)
+//    ns.greynet.telemetry()   -> {bpm, rhythmVar, amp, cond, tick}
+//    ns.greynet.signatureMet()-> true once the failure signature holds
+//    ns.greynet.traceBand()   -> 'nominal' | 'scrutiny' | 'flagged'
+//    ns.greynet.ticksElapsed()-> cycles run so far
+//    ns.greynet.tickBudget()  -> the cycle limit for this contract
+// ============================================================
+
+// Example: recon every node, then breach the ones still sealed.
 for (const node of await ns.greynet.scan()) {
+  log(node.id + '  [' + node.state + ']');
   if (node.state === 'SEALED') {
     const p = await ns.greynet.getBreachPuzzle(node.id);
-    // p.shown is the captured handshake; solve p.rule yourself
-    log('would breach ' + node.id + ' [' + p.family + ']');
+    log('  puzzle: ' + p.family + '  samples: ' + JSON.stringify(p.shown));
+    // work out the rule from p.shown, then submit it:
+    //   await ns.greynet.submitBreach(node.id, n => /* your rule */);
   }
 }
-log('scan complete — now write the real solver.');</textarea>
+log('recon done — now write the breach, config and library steps.');</textarea>
     <div class="errline" id="scripterr"></div>
     <div class="mbtn">
       <button id="sc-close">CLOSE</button>
@@ -601,6 +672,10 @@ const HEART_ART=[
 // ---- sim state -----------------------------------------------------
 let sim=null,hw,setp,tick,stream,reviewVal,beatPhase,running,playerRegulate=null;
 let libraryText=$('code').value;
+// automation is EARNED: the solver.js toolkit unlocks only after the
+// contract is beaten by hand. usedScript tracks whether the current
+// run-up to a win involved the script editor at all.
+let scriptUnlocked=false, usedScript=false;
 function freshPatient(){
   hw={bpm:72,rhythmVar:0.05,amp:1.00,cond:120};
   setp={rate:72,gain:1.00};
@@ -627,12 +702,14 @@ const HELP_LINES=[
   '  cat <file>        read a file',
   '  nano <file>       edit a config file',
   '  inject            open the regulator.js editor',
-  '  script            open the solver.js automation editor',
   '  run / stop        control the routine',
 ];
 const CMDS={
   help(){
     HELP_LINES.forEach(l=>tprint(l));
+    tprint('  script            open solver.js'
+      +(scriptUnlocked?' — automate the contract':'  (locked — win by hand to unlock)'),
+      scriptUnlocked?null:'d');
     tprint('nodes: n_rate  n_rhythm  n_amp  n_cond','d');
   },
   scan(){
@@ -668,7 +745,17 @@ const CMDS={
     if(NODES.n_rate.state==='SEALED'){ tprint('inject: breach RATE CTRL first','e');return; }
     openEditor();
   },
-  script(){ openScript(); },
+  script(){
+    if(!scriptUnlocked){
+      tprint('script: automation toolkit is LOCKED','e');
+      tprint('  GREYNET hands you the solver only once you have proven','d');
+      tprint('  the contract by hand. Beat it manually first — breach the','d');
+      tprint('  nodes, defeat the countermeasures, write regulate(), and','d');
+      tprint('  meet the failure signature. solver.js unlocks on that win.','d');
+      return;
+    }
+    openScript();
+  },
   run(){ if(!$('run').disabled) $('run').onclick(); else tprint('run: nothing to run yet','e'); },
   stop(){ if(!$('stop').disabled) $('stop').onclick(); },
 };
@@ -716,6 +803,7 @@ function openBreach(id){
   $('bx-title').textContent='BREACH // '+id+'  ['+b.family+']';
   $('bx-pairs').innerHTML=b.shown.map(p=>`<span class="p">${p[0]} &rarr; ${p[1]}</span>`).join('');
   $('bx-code').value='function unlock(n) {\n  return n;   // wrong — fix this\n}';
+  if($('bx-code')._repaintHL) $('bx-code')._repaintHL();
   $('bx-res').textContent='';
   $('scrim-breach').classList.remove('hide');
   $('bx-code').focus();
@@ -748,6 +836,7 @@ function openNano(owner,file){
   $('nx-title').textContent='nano // '+file;
   $('nx-path').textContent='// '+owner+'/'+file;
   $('nx-code').value=cfgText(file);
+  if($('nx-code')._repaintHL) $('nx-code')._repaintHL();
   $('nx-res').textContent='';
   $('scrim-nano').classList.remove('hide');
   $('nx-code').focus();
@@ -807,7 +896,7 @@ $('run').onclick=()=>{
   sim=setInterval(stepHeart,55);
 };
 $('stop').onclick=()=>{ haltSim();tprint('// routine stopped','d'); };
-$('reset').onclick=()=>{ haltSim();freshPatient();
+$('reset').onclick=()=>{ haltSim();freshPatient();usedScript=false;
   tprint('// patient reset to baseline','d'); };
 function haltSim(){
   clearInterval(sim);sim=null;running=false;
@@ -1223,6 +1312,19 @@ function endRun(win){
         +improved.join(', ')+'</p>':'<p class="small">no axis beaten this run — try a different approach.</p>');
     tprint('// CONTRACT COMPLETE — time '+sc.time+' · trace '+sc.trace+
            ' · ram '+sc.ram+' · loc '+sc.loc,'ok');
+    // earned unlock: beating the contract BY HAND opens the automation
+    // toolkit — the prototype's model of GREYNET's "automation is
+    // earned mastery" principle (spec P6).
+    if(!scriptUnlocked && !usedScript){
+      scriptUnlocked=true;
+      $('rx-body').innerHTML+=
+        '<div class="verdict win" style="margin-top:12px">'+
+        'AUTOMATION TOOLKIT UNLOCKED</div>'+
+        '<p>You have proven the contract by hand. The <b>ns.greynet</b> '+
+        'scripting API is now available — type <code>script</code> in the '+
+        'terminal to open <b>solver.js</b> and automate the whole thing.</p>';
+      tprint('// ★ automation unlocked — type  script  to open solver.js','ok');
+    }
   }else{
     $('rx-title').textContent='✗ CYCLE BUDGET EXPIRED';
     $('rx-sub').textContent='// the signature was not met in time';
@@ -1351,6 +1453,7 @@ $('sc-run').onclick=async()=>{
     e.textContent='✗ COMPILE ERROR — '+err.message;return;
   }
   $('scrim-script').classList.add('hide');
+  usedScript=true;             // this run-up to a win used automation
   try{
     await body(ns,log,sleep);
     tprint('// solver.js — finished','ok');
@@ -1359,6 +1462,96 @@ $('sc-run').onclick=async()=>{
   }
   $('termin').focus();
 };
+
+// ====================================================================
+// Syntax highlighting — a <pre.hl> behind each textarea shows coloured
+// code; the textarea on top is transparent-text with a visible caret.
+// ====================================================================
+const JS_KEYWORDS=new Set(('await async function return const let var if else for '
+  +'while of in new typeof break continue try catch throw true false null '
+  +'undefined this').split(' '));
+
+function escHTML(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// tokenise + colour a line of JavaScript
+function hlJS(src){
+  let out='', i=0;
+  const n=src.length;
+  while(i<n){
+    const c=src[i];
+    // line comment
+    if(c==='/'&&src[i+1]==='/'){
+      let j=src.indexOf('\n',i); if(j<0) j=n;
+      out+='<span class="t-com">'+escHTML(src.slice(i,j))+'</span>'; i=j; continue;
+    }
+    // string (single / double / backtick)
+    if(c==='"'||c==="'"||c==='`'){
+      let j=i+1;
+      while(j<n && src[j]!==c){ if(src[j]==='\\') j++; j++; }
+      j=Math.min(j+1,n);
+      out+='<span class="t-str">'+escHTML(src.slice(i,j))+'</span>'; i=j; continue;
+    }
+    // number
+    if(/[0-9]/.test(c)){
+      let j=i; while(j<n && /[0-9.]/.test(src[j])) j++;
+      out+='<span class="t-num">'+escHTML(src.slice(i,j))+'</span>'; i=j; continue;
+    }
+    // identifier / keyword / function name
+    if(/[A-Za-z_$]/.test(c)){
+      let j=i; while(j<n && /[A-Za-z0-9_$]/.test(src[j])) j++;
+      const word=src.slice(i,j);
+      let nx=j; while(nx<n && src[nx]===' ') nx++;
+      if(JS_KEYWORDS.has(word))
+        out+='<span class="t-key">'+escHTML(word)+'</span>';
+      else if(src[nx]==='(' || GREYNET_API.includes(word))
+        out+='<span class="t-fn">'+escHTML(word)+'</span>';
+      else out+=escHTML(word);
+      i=j; continue;
+    }
+    // punctuation / operators
+    if(/[{}()\[\];,.<>+\-*/%=!&|?:]/.test(c)){
+      out+='<span class="t-op">'+escHTML(c)+'</span>'; i++; continue;
+    }
+    out+=escHTML(c); i++;
+  }
+  return out;
+}
+
+// colour a config file: KEY = value, # comments
+function hlCfg(src){
+  return src.split('\n').map(line=>{
+    const h=line.indexOf('#');
+    if(h===0) return '<span class="t-com">'+escHTML(line)+'</span>';
+    const m=/^(\s*)([A-Z_][A-Z0-9_]*)(\s*=\s*)(.*)$/.exec(line);
+    if(!m) return escHTML(line);
+    return escHTML(m[1])+'<span class="t-cfg">'+escHTML(m[2])+'</span>'
+      +'<span class="t-op">'+escHTML(m[3])+'</span>'
+      +'<span class="t-str">'+escHTML(m[4])+'</span>';
+  }).join('\n');
+}
+
+// wrap a textarea: build the .hl layer behind it, keep them in sync
+function attachHighlight(ta,mode){
+  const wrap=document.createElement('div');
+  wrap.className='edwrap';
+  ta.parentNode.insertBefore(wrap,ta);
+  const hl=document.createElement('pre');
+  hl.className='hl';
+  hl.setAttribute('aria-hidden','true');
+  wrap.appendChild(hl);
+  wrap.appendChild(ta);
+  const paint=()=>{
+    const code=ta.value;
+    hl.innerHTML=(mode==='cfg'?hlCfg(code):hlJS(code))+'\n';
+    hl.scrollTop=ta.scrollTop; hl.scrollLeft=ta.scrollLeft;
+  };
+  ta.addEventListener('input',paint);
+  ta.addEventListener('scroll',()=>{ hl.scrollTop=ta.scrollTop;hl.scrollLeft=ta.scrollLeft; });
+  ta._repaintHL=paint;          // so enhanceEditor's edits can trigger it
+  paint();
+}
 
 // ====================================================================
 // Code-editor enhancement — makes the textareas behave like an editor.
@@ -1372,6 +1565,8 @@ const PAIRS={'(':')','[':']','{':'}','"':'"',"'":"'",'`':'`'};
 
 function enhanceEditor(ta,opts){
   opts=opts||{};
+  // any programmatic edit below must refresh the highlight layer
+  const repaint=()=>{ if(ta._repaintHL) ta._repaintHL(); };
   ta.addEventListener('keydown',e=>{
     const v=ta.value, s=ta.selectionStart, en=ta.selectionEnd;
     const lineStart=v.lastIndexOf('\n',s-1)+1;
@@ -1480,6 +1675,9 @@ function enhanceEditor(ta,opts){
       return;
     }
   });
+  // refresh the highlight layer after any edit the keydown handler made
+  // (programmatic ta.value changes don't fire 'input')
+  ta.addEventListener('keyup',repaint);
 }
 function sharedPrefix(arr){
   if(!arr.length) return '';
@@ -1488,7 +1686,12 @@ function sharedPrefix(arr){
   return p;
 }
 
-// apply to the editors — JS editors get API completion, nano gets indent only
+// apply to the editors — JS editors get API completion, nano gets indent only;
+// all four get syntax highlighting (JS mode, or config mode for nano)
+attachHighlight($('code'),'js');
+attachHighlight($('scriptcode'),'js');
+attachHighlight($('bx-code'),'js');
+attachHighlight($('nx-code'),'cfg');
 enhanceEditor($('code'),      {api:true, hint:m=>{ const e=$('errline');
   e.style.display='block';e.style.color='var(--cyan)';e.style.borderColor='var(--cyan)';
   e.textContent='⌨ '+m; }});
