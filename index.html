@@ -40,11 +40,12 @@
   #zoom-val{font-size:10px;color:var(--dim);min-width:34px;text-align:center}
 
   /* ===== connected view: ascii fills upper area, terminal a bottom bar ===== */
-  #conn{flex:1;min-height:0;display:flex;flex-direction:column}
-  #sysview{flex:1;display:flex;overflow:hidden}
+  /* conn is a ROW: left column (heart over terminal) + full-height sidebar */
+  #conn{flex:1;min-height:0;display:flex;flex-direction:row}
+  #leftcol{flex:1;min-width:0;display:flex;flex-direction:column}
 
-  /* left: the animated system map */
-  #mapwrap{flex:1;position:relative;overflow:hidden}
+  /* left column, upper part: the animated system map */
+  #mapwrap{flex:1;min-height:0;position:relative;overflow:hidden}
   #mapwrap h2,.sidebar h2{font-size:10px;letter-spacing:2px;color:var(--dim);
     font-weight:700;text-transform:uppercase;padding:7px 11px;border-bottom:1px solid var(--edge)}
   #stage{position:absolute;top:30px;left:0;right:0;bottom:0;
@@ -82,8 +83,9 @@
   .hotzone::after{content:'';position:absolute;left:50%;bottom:-7px;
     width:1px;height:7px;background:var(--pcol);opacity:.5}
 
-  /* right: telemetry + signature + score sidebar */
-  .sidebar{width:312px;border-left:1px solid var(--edge);display:flex;flex-direction:column;overflow-y:auto}
+  /* right: full-height sidebar — telemetry, signature, score, controls */
+  .sidebar{width:312px;flex:none;border-left:1px solid var(--edge);
+    display:flex;flex-direction:column;overflow-y:auto}
   .sect{border-bottom:1px solid var(--edge);padding:10px 11px}
   .sect h3{font-size:9px;letter-spacing:1.5px;color:var(--dim);margin-bottom:8px;text-transform:uppercase}
   .sect.telem h3{color:var(--cyan)}
@@ -117,9 +119,9 @@
   .sax .v{font-size:13px;color:var(--bright)}
   .sax .b{font-size:8px;color:var(--cyan)}
 
-  /* ===== terminal: bottom bar ===== */
-  #term{height:188px;border-top:1px solid var(--edge2);background:#010801;
-    display:flex;flex-direction:column}
+  /* ===== terminal: foot of the left column, up to the sidebar ===== */
+  #term{height:188px;flex:none;border-top:1px solid var(--edge2);
+    background:#010801;display:flex;flex-direction:column}
   #termhead{font-size:9px;letter-spacing:1.5px;color:var(--dim);padding:5px 11px;
     border-bottom:1px solid var(--edge);display:flex}
   #termhead .hint{margin-left:auto;color:var(--edge2)}
@@ -327,16 +329,13 @@ log('scan complete — now write the real solver.');</textarea>
 </div>
 
 <div id="conn">
-  <div id="sysview">
-
-    <!-- system map -->
+  <!-- left column: heart on top, terminal below; both stop at the sidebar -->
+  <div id="leftcol">
     <div id="mapwrap">
       <h2>MedCorp cardiac unit — click a panel on the heart, or use the terminal</h2>
       <div id="stage">
         <div id="heartbox">
           <div id="heart"></div>
-          <!-- invisible click-zones, positioned over the embedded panels
-               by JS from the art grid; the visible panels are IN the ASCII -->
           <div class="hotzone" data-node="n_rate"   title="SA node — right atrium"></div>
           <div class="hotzone" data-node="n_rhythm" title="AV node — atrioventricular junction"></div>
           <div class="hotzone" data-node="n_amp"    title="left ventricle — contraction"></div>
@@ -345,69 +344,69 @@ log('scan complete — now write the real solver.');</textarea>
       </div>
     </div>
 
-    <!-- sidebar -->
-    <div class="sidebar">
-      <div class="sect">
-        <h3>Failure signature — T2, all five</h3>
-        <div class="cond" id="c0"><span class="box">·</span><span><b>BPM falling</b> — never rises</span></div>
-        <div class="cond" id="c1"><span class="box">·</span><span><b>Gradual</b> — fallen, no collapse</span></div>
-        <div class="cond" id="c2"><span class="box">·</span><span><b>Variance &lt; 0.15</b> — stays smooth</span></div>
-        <div class="cond" id="c3"><span class="box">·</span><span><b>Amp tracks rate</b></span></div>
-        <div class="cond" id="c4"><span class="box">·</span><span><b>Arrest</b> — BPM &le; 42</span></div>
-      </div>
-      <div class="sect telem">
-        <h3>Telemetry</h3>
-        <div class="trow"><div class="tlab"><span>BPM</span><b id="v_bpm">72</b></div>
-          <div class="bar"><div class="fill" id="f_bpm"></div></div></div>
-        <div class="trow"><div class="tlab"><span>RHYTHM VAR</span><b id="v_var">0.05</b></div>
-          <div class="bar"><div class="fill" id="f_var"></div></div></div>
-        <div class="trow"><div class="tlab"><span>AMPLITUDE</span><b id="v_amp">1.00</b></div>
-          <div class="bar"><div class="fill" id="f_amp"></div></div></div>
-        <div class="trow"><div class="tlab"><span>CONDUCTION ms</span><b id="v_cond">120</b></div>
-          <div class="bar"><div class="fill" id="f_cond"></div></div></div>
-      </div>
-      <div class="sect">
-        <h3>Trace meter</h3>
-        <div class="tlab"><span style="color:var(--dim)">monitoring</span>
-          <b id="v_rev" style="color:var(--bright)">nominal</b></div>
-        <div class="meter" style="margin-top:4px"><div class="meter-fill" id="f_rev"></div></div>
-        <div id="fsalert" style="display:none;color:var(--red);font-size:9px;
-          letter-spacing:1px;margin-top:6px">⚠ COUNTERMEASURE TRIGGERED</div>
-      </div>
-      <div class="sect">
-        <h3>Run score — beat your best</h3>
-        <div class="score">
-          <div class="sax"><div class="k">EXEC TIME</div><div class="v" id="s_time">—</div>
-            <div class="b" id="b_time">best —</div></div>
-          <div class="sax"><div class="k">TRACE</div><div class="v" id="s_trace">—</div>
-            <div class="b" id="b_trace">best —</div></div>
-          <div class="sax"><div class="k">RAM</div><div class="v" id="s_ram">—</div>
-            <div class="b" id="b_ram">best —</div></div>
-          <div class="sax"><div class="k">LINES</div><div class="v" id="s_loc">—</div>
-            <div class="b" id="b_loc">best —</div></div>
-        </div>
-        <div class="small">cycle <b id="v_tick" style="color:var(--ink)">0 / 2400</b></div>
-      </div>
-      <div class="sect" style="border-bottom:none">
-        <h3>Routine control</h3>
-        <div style="display:flex;gap:7px;flex-wrap:wrap">
-          <button id="open-editor">✎ EDIT LIBRARY</button>
-          <button class="go" id="run" disabled>▶ RUN</button>
-          <button id="stop" disabled>■ STOP</button>
-          <button id="reset">↺ RESET</button>
-        </div>
-        <div id="edlock" class="small" style="color:var(--red)">breach RATE CTRL to unlock the library editor</div>
+    <!-- terminal bar — fills the left column's foot, up to the sidebar -->
+    <div id="term">
+      <div id="termhead"><span>TERMINAL</span><span class="hint">help · scan · breach · ls · cat · nano · inject · script · run</span></div>
+      <div id="termout"></div>
+      <div class="terminline">
+        <span class="pr">greynet@gn-2241 $</span>
+        <input id="termin" autocomplete="off" spellcheck="false">
       </div>
     </div>
   </div>
 
-  <!-- terminal bar -->
-  <div id="term">
-    <div id="termhead"><span>TERMINAL</span><span class="hint">help · scan · breach · ls · cat · nano · inject · script · run</span></div>
-    <div id="termout"></div>
-    <div class="terminline">
-      <span class="pr">greynet@gn-2241 $</span>
-      <input id="termin" autocomplete="off" spellcheck="false">
+  <!-- sidebar — full height down the right side -->
+  <div class="sidebar">
+    <div class="sect">
+      <h3>Failure signature — T2, all five</h3>
+      <div class="cond" id="c0"><span class="box">·</span><span><b>BPM falling</b> — never rises</span></div>
+      <div class="cond" id="c1"><span class="box">·</span><span><b>Gradual</b> — fallen, no collapse</span></div>
+      <div class="cond" id="c2"><span class="box">·</span><span><b>Variance &lt; 0.15</b> — stays smooth</span></div>
+      <div class="cond" id="c3"><span class="box">·</span><span><b>Amp tracks rate</b></span></div>
+      <div class="cond" id="c4"><span class="box">·</span><span><b>Arrest</b> — BPM &le; 42</span></div>
+    </div>
+    <div class="sect telem">
+      <h3>Telemetry</h3>
+      <div class="trow"><div class="tlab"><span>BPM</span><b id="v_bpm">72</b></div>
+        <div class="bar"><div class="fill" id="f_bpm"></div></div></div>
+      <div class="trow"><div class="tlab"><span>RHYTHM VAR</span><b id="v_var">0.05</b></div>
+        <div class="bar"><div class="fill" id="f_var"></div></div></div>
+      <div class="trow"><div class="tlab"><span>AMPLITUDE</span><b id="v_amp">1.00</b></div>
+        <div class="bar"><div class="fill" id="f_amp"></div></div></div>
+      <div class="trow"><div class="tlab"><span>CONDUCTION ms</span><b id="v_cond">120</b></div>
+        <div class="bar"><div class="fill" id="f_cond"></div></div></div>
+    </div>
+    <div class="sect">
+      <h3>Trace meter</h3>
+      <div class="tlab"><span style="color:var(--dim)">monitoring</span>
+        <b id="v_rev" style="color:var(--bright)">nominal</b></div>
+      <div class="meter" style="margin-top:4px"><div class="meter-fill" id="f_rev"></div></div>
+      <div id="fsalert" style="display:none;color:var(--red);font-size:9px;
+        letter-spacing:1px;margin-top:6px">⚠ COUNTERMEASURE TRIGGERED</div>
+    </div>
+    <div class="sect">
+      <h3>Run score — beat your best</h3>
+      <div class="score">
+        <div class="sax"><div class="k">EXEC TIME</div><div class="v" id="s_time">—</div>
+          <div class="b" id="b_time">best —</div></div>
+        <div class="sax"><div class="k">TRACE</div><div class="v" id="s_trace">—</div>
+          <div class="b" id="b_trace">best —</div></div>
+        <div class="sax"><div class="k">RAM</div><div class="v" id="s_ram">—</div>
+          <div class="b" id="b_ram">best —</div></div>
+        <div class="sax"><div class="k">LINES</div><div class="v" id="s_loc">—</div>
+          <div class="b" id="b_loc">best —</div></div>
+      </div>
+      <div class="small">cycle <b id="v_tick" style="color:var(--ink)">0 / 2400</b></div>
+    </div>
+    <div class="sect" style="border-bottom:none">
+      <h3>Routine control</h3>
+      <div style="display:flex;gap:7px;flex-wrap:wrap">
+        <button id="open-editor">✎ EDIT LIBRARY</button>
+        <button class="go" id="run" disabled>▶ RUN</button>
+        <button id="stop" disabled>■ STOP</button>
+        <button id="reset">↺ RESET</button>
+      </div>
+      <div id="edlock" class="small" style="color:var(--red)">breach RATE CTRL to unlock the library editor</div>
     </div>
   </div>
 </div>
