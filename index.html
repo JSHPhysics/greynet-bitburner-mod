@@ -1187,12 +1187,146 @@ const CMDS={
     setTimeout(()=>location.reload(),350);
   },
 };
+// ---- tab autocomplete ----------------------------------------------
+// Tab completes the current token in the terminal input.
+//   * first token  -> command names (script is hidden until unlocked)
+//   * after breach -> nodes still SEALED
+//   * after cd     -> nodes already BREACHED
+//   * after ls     -> any node
+//   * after cat    -> files in the current node
+//   * after nano   -> editable files in the current node
+// One match completes and adds a trailing space. Multiple matches
+// extend the input to the longest shared prefix (if any) and list the
+// options above the prompt. Zero matches is a silent no-op.
+const TERM_COMMANDS_BASE=['breach','cat','cd','help','inject','ls','nano',
+  'newgame','pwd','run','scan','stop'];
+function termCommandList(){
+  return scriptUnlocked
+    ? TERM_COMMANDS_BASE.concat(['script']).sort()
+    : TERM_COMMANDS_BASE.slice();
+}
+function termArgCompletions(cmd, partial){
+  const p=partial.toLowerCase();
+  if(cmd==='breach'){
+    return Object.keys(NODES).filter(id =>
+      NODES[id].state==='SEALED' && id.toLowerCase().startsWith(p));
+  }
+  if(cmd==='cd'){
+    return Object.keys(NODES).filter(id =>
+      NODES[id].state!=='SEALED' && id.toLowerCase().startsWith(p));
+  }
+  if(cmd==='ls'){
+    return Object.keys(NODES).filter(id => id.toLowerCase().startsWith(p));
+  }
+  if(cmd==='cat' || cmd==='nano'){
+    if(cwd==='/') return [];
+    const nodeId=cwd.slice(1);
+    if(!NODES[nodeId] || NODES[nodeId].state==='SEALED') return [];
+    let files=filesFor(nodeId);
+    if(cmd==='nano') files=files.filter(f => cfgText(f));   // editable only
+    return files.filter(f => f.toLowerCase().startsWith(p));
+  }
+  return [];
+}
+function termTabComplete(input){
+  const value=input.value;
+  const trailingSpace=/\s$/.test(value);
+  const tokens=value.split(/\s+/).filter(t => t.length>0);
+
+  let candidates, completing;
+  if(tokens.length===0){
+    completing='';
+    candidates=termCommandList();
+  }else if(tokens.length===1 && !trailingSpace){
+    completing=tokens[0];
+    candidates=termCommandList().filter(c => c.startsWith(completing.toLowerCase()));
+  }else{
+    const cmd=tokens[0].toLowerCase();
+    completing=trailingSpace ? '' : tokens[tokens.length-1];
+    candidates=termArgCompletions(cmd, completing);
+  }
+
+  if(candidates.length===0) return;
+
+  if(candidates.length===1){
+    // one match: replace the partial token, add a trailing space so the
+    // next argument can be typed immediately
+    input.value=value.slice(0, value.length-completing.length)
+              + candidates[0] + ' ';
+    return;
+  }
+
+  // many: extend to the shared prefix (only if it adds characters) and
+  // list the options above the prompt
+  const prefix=sharedPrefix(candidates);
+  if(prefix.length>completing.length){
+    input.value=value.slice(0, value.length-completing.length) + prefix;
+  }
+  tprint('  '+candidates.join('   '),'d');
+}
+
+// ---- terminal history ----------------------------------------------
+// Up / Down walk through previously-entered commands. The in-progress
+// input is captured as a "draft" the moment the player first presses
+// Up, and is restored when they press Down past the most recent entry.
+// Consecutive duplicates are coalesced; total length is capped. Scope
+// is the current session — history isn't saved across reloads.
+const TERM_HIST_MAX=50;
+const termHist=[];
+let termHistIdx=-1;          // -1 == not navigating
+let termHistDraft='';        // input value at the start of nav
+function termHistPush(cmd){
+  if(!cmd) return;
+  if(termHist.length && termHist[termHist.length-1]===cmd) return;
+  termHist.push(cmd);
+  if(termHist.length>TERM_HIST_MAX) termHist.shift();
+  termHistIdx=-1;
+}
+function termHistUp(input){
+  if(termHist.length===0) return;
+  if(termHistIdx===-1){
+    termHistDraft=input.value;            // save the in-progress edit
+    termHistIdx=termHist.length-1;
+  }else if(termHistIdx>0){
+    termHistIdx--;
+  }
+  input.value=termHist[termHistIdx];
+}
+function termHistDown(input){
+  if(termHistIdx===-1) return;
+  termHistIdx++;
+  if(termHistIdx>=termHist.length){
+    termHistIdx=-1;
+    input.value=termHistDraft;            // back to whatever they were typing
+    termHistDraft='';
+  }else{
+    input.value=termHist[termHistIdx];
+  }
+}
+
 $('termin').addEventListener('keydown',e=>{
+  if(e.key==='Tab'){
+    e.preventDefault();
+    if(!e.repeat) termTabComplete(e.target);
+    return;
+  }
+  if(e.key==='ArrowUp'){
+    e.preventDefault();
+    termHistUp(e.target);                 // auto-repeat allowed — holding
+    return;                               // Up scrolls quickly, like a shell
+  }
+  if(e.key==='ArrowDown'){
+    e.preventDefault();
+    termHistDown(e.target);
+    return;
+  }
   if(e.key!=='Enter')return;
   if(e.repeat)return;                    // ignore auto-repeat from a held key
   e.preventDefault();
   const raw=e.target.value.trim();e.target.value='';
   if(!raw)return;
+  termHistPush(raw);                     // recorded even if invalid, so the
+                                         // player can scroll back to fix typos
   techo(raw);
   const [c,...r]=raw.split(/\s+/);
   const fn=CMDS[c.toLowerCase()];
@@ -1428,17 +1562,23 @@ function flashFailsafe(dippedBpm){
   num.classList.remove('numflick');void num.offsetWidth;num.classList.add('numflick');
   if(dippedBpm!=null){
     num.textContent=Math.round(dippedBpm);
+    _telCache.v_bpm=null;                          // paintTelemetry must
+                                                   // re-write after the hold
     num.dataset.dipHold='1';                       // mark: hold this reading
     setTimeout(()=>{ delete num.dataset.dipHold; },90);  // ~1.5 frames
   }
-  // RATE panel fights back — flag it so the overlay animates, alert
+  // RATE panel fights back — toggle the .fighting class directly on the
+  // n_rate panel. Used to go through positionHotzones() which reads
+  // heart.offsetWidth/Height (forces layout) and rebuilds all four
+  // panels; that was firing on every failsafe correction.
+  const hz=document.querySelector('.hotzone[data-node="n_rate"]');
+  if(hz) hz.classList.add('fighting');
   document.body.dataset.cmfight='1';
-  positionHotzones();
   const a=$('fsalert');a.style.display='block';
   clearTimeout(fsTimer);fsTimer=setTimeout(()=>{
     a.style.display='none';
     delete document.body.dataset.cmfight;
-    positionHotzones();
+    if(hz) hz.classList.remove('fighting');
   },460);
 }
 
@@ -1560,47 +1700,59 @@ const PULSE_OFFSETS=[0, 2.4, 4.8];           // beats behind the lead
 // density ramp the pulse swaps glyphs through — faint edge to hot core
 const PULSE_RAMP=['+','*','#','@'];
 
+// Cells lit on the LAST frame, so we can clear just those instead of
+// scanning all ~3500 heart cells looking for the ~50 that were lit.
+let prevLit=[];
 function drawBloodflow(){
   if(!heartRendered) return;
-  const cols=HEART_ART[0].length, rows=HEART_ART.length;
-  // clear last frame: restore the original glyph and styling
-  for(const cell of heartCells){
-    if(cell.lit){
-      cell.span.style.cssText='';
-      if(cell.span.textContent!==cell.ch) cell.span.textContent=cell.ch;
-      cell.lit=false;
-    }
+  // clear last frame's lit cells (small list, not the whole heart)
+  for(const cell of prevLit){
+    cell.span.style.cssText='';
+    if(cell.span.textContent!==cell.ch) cell.span.textContent=cell.ch;
+    cell.lit=false;
   }
+  prevLit.length=0;
   if(hw.bpm<24) return;                       // flatline — no flow
 
+  const cols=HEART_ART[0].length, rows=HEART_ART.length;
   const amp=clamp(hw.amp,0,1.3);
   // each pulse is a STREAK, not a dot: sampled at several points trailing
   // back along the path from the head, each a small radius. Thin + long.
-  const RAD=2.2;                              // streak thickness, in cells
+  const RAD=2.2, RAD_SQ=RAD*RAD;              // streak thickness, in cells
   const STREAK=0.5;                           // length, in beats of path behind
   const SAMP=7;                               // points along the streak
 
-  // build the sample points: for each pulse, SAMP points fading back
+  // build the sample points: for each pulse, SAMP points fading back.
+  // Pre-multiply pos.x/pos.y by cols/rows so the per-cell distance check
+  // inside the hot loop avoids those multiplications.
   const pts=[];
   PULSE_OFFSETS.forEach((off,idx)=>{
     const lead = idx===0?1 : idx===1?0.7 : 0.45;
     for(let s=0;s<SAMP;s++){
       const back=s/(SAMP-1);                  // 0 head .. 1 tail
+      const pos=flowPos(beatPhase-off-back*STREAK);
       pts.push({
-        pos:flowPos(beatPhase-off-back*STREAK),
+        px:pos.x*cols, py:pos.y*rows,
         w:lead*(1-back*0.8),                  // head bright, tail faded
       });
     }
   });
+  const nPts=pts.length;
 
+  // Hot loop. The squared-distance check skips the sqrt for ~99% of
+  // cell-against-point pairs (the cell is just nowhere near that point);
+  // we only sqrt once we know the cell is inside the streak radius.
   for(const cell of heartCells){
     let best=0;
-    for(const p of pts){
-      const dx=cell.col-p.pos.x*cols, dy=cell.row-p.pos.y*rows;
-      const d=Math.sqrt(dx*dx+dy*dy);
-      if(d>RAD) continue;
-      const fall=1-d/RAD;                     // 1 at centre -> 0 at edge
-      best=Math.max(best, fall*fall*p.w);
+    const cc=cell.col, cr=cell.row;
+    for(let pi=0;pi<nPts;pi++){
+      const p=pts[pi];
+      const dx=cc-p.px, dy=cr-p.py;
+      const d2=dx*dx+dy*dy;
+      if(d2>RAD_SQ) continue;
+      const fall=1-Math.sqrt(d2)/RAD;         // 1 at centre -> 0 at edge
+      const v=fall*fall*p.w;
+      if(v>best) best=v;
     }
     if(best<0.06) continue;
     const i=clamp(best*amp,0,1);
@@ -1616,6 +1768,7 @@ function drawBloodflow(){
     cell.span.style.textShadow='0 0 '+(2+i*7).toFixed(1)+'px rgba(120,255,140,'
       +(0.55+i*0.45).toFixed(2)+')';
     cell.lit=true;
+    prevLit.push(cell);
   }
 }
 
@@ -1684,43 +1837,61 @@ function relayoutHeart(){
   positionHotzones();
   drawBloodflow();     // refresh the glyph-glow trace at the current phase
 }
+// Last value written to each telemetry slot. paintTelemetry is called
+// every tick (~18Hz) and most values barely change between frames — the
+// cache skips redundant DOM writes (each of which would otherwise queue
+// a paint). flashFailsafe sets _telCache.v_bpm=null after writing a
+// dipped reading so the next paintTelemetry will re-write the true BPM.
+const _telCache={};
 function paintTelemetry(){
+  // helper: write to el.prop only if the value changed since last paint
+  const set=(id,prop,value)=>{
+    const k=id+'.'+prop;
+    if(_telCache[k]===value) return;
+    _telCache[k]=value;
+    const el=$(id);
+    if(prop==='textContent') el.textContent=value;
+    else el.style[prop]=value;
+  };
+  // Bar widths are quantised to integer % — a sub-pixel write is wasted
+  // work and the .1s CSS transition smooths the steps visually anyway.
+
   // while a countermeasure dip is being held, don't overwrite the BPM
   // number — let the dipped reading linger so the jump is visible
-  if(!$('v_bpm').dataset.dipHold) $('v_bpm').textContent=hw.bpm.toFixed(0);
-  $('v_var').textContent=hw.rhythmVar.toFixed(3);
-  $('v_amp').textContent=hw.amp.toFixed(2);
-  $('v_cond').textContent=hw.cond.toFixed(0);
-  $('v_tick').textContent=tick+' / '+TUNING.TICK_BUDGET;
+  if(!$('v_bpm').dataset.dipHold) set('v_bpm','textContent',hw.bpm.toFixed(0));
+  set('v_var','textContent',hw.rhythmVar.toFixed(3));
+  set('v_amp','textContent',hw.amp.toFixed(2));
+  set('v_cond','textContent',hw.cond.toFixed(0));
+  set('v_tick','textContent',tick+' / '+TUNING.TICK_BUDGET);
 
   // BPM — a vital sign: healthy green, amber as it falls, red at arrest range
-  $('f_bpm').style.width=clamp(hw.bpm/160*100,2,100)+'%';
-  let bpmCol = hw.bpm>=60 ? '#5fe070' : hw.bpm>=TUNING.ARREST_BPM ? 'var(--warn)' : 'var(--red)';
-  $('f_bpm').style.background=bpmCol;
-  $('v_bpm').style.color=bpmCol;
+  set('f_bpm','width',clamp(hw.bpm/160*100,2,100).toFixed(0)+'%');
+  const bpmCol = hw.bpm>=60 ? '#5fe070' : hw.bpm>=TUNING.ARREST_BPM ? 'var(--warn)' : 'var(--red)';
+  set('f_bpm','background',bpmCol);
+  set('v_bpm','color',bpmCol);
 
   // rhythm variance — cyan when smooth, red once it crosses the SMOOTH_VAR line
-  $('f_var').style.width=clamp(hw.rhythmVar/0.4*100,2,100)+'%';
-  let varCol = hw.rhythmVar<TUNING.SMOOTH_VAR ? 'var(--cyan)' : 'var(--red)';
-  $('f_var').style.background=varCol;
-  $('v_var').style.color=varCol;
+  set('f_var','width',clamp(hw.rhythmVar/0.4*100,2,100).toFixed(0)+'%');
+  const varCol = hw.rhythmVar<TUNING.SMOOTH_VAR ? 'var(--cyan)' : 'var(--red)';
+  set('f_var','background',varCol);
+  set('v_var','color',varCol);
 
   // amplitude — its own warm hue, dimming as contractility fades
-  $('f_amp').style.width=clamp(hw.amp/1.4*100,2,100)+'%';
-  let ampCol = hw.amp>=0.8 ? '#c89bff' : hw.amp>=0.4 ? 'var(--warn)' : 'var(--red)';
-  $('f_amp').style.background=ampCol;
-  $('v_amp').style.color=ampCol;
+  set('f_amp','width',clamp(hw.amp/1.4*100,2,100).toFixed(0)+'%');
+  const ampCol = hw.amp>=0.8 ? '#c89bff' : hw.amp>=0.4 ? 'var(--warn)' : 'var(--red)';
+  set('f_amp','background',ampCol);
+  set('v_amp','color',ampCol);
 
   // conduction — blue, reddening as delay drifts off-nominal
-  $('f_cond').style.width=clamp((hw.cond-80)/220*100,2,100)+'%';
-  let condCol = Math.abs(hw.cond-120)<40 ? '#58a6ff' : 'var(--warn)';
-  $('f_cond').style.background=condCol;
-  $('v_cond').style.color=condCol;
+  set('f_cond','width',clamp((hw.cond-80)/220*100,2,100).toFixed(0)+'%');
+  const condCol = Math.abs(hw.cond-120)<40 ? '#58a6ff' : 'var(--warn)';
+  set('f_cond','background',condCol);
+  set('v_cond','color',condCol);
 
   // trace meter — green / amber / red bands; warn the first time the
   // meter pegs into FLAGGED so the player isn't surprised by the
   // resulting end-run failure
-  $('f_rev').style.width=clamp(reviewVal,4,100)+'%';
+  set('f_rev','width',clamp(reviewVal,4,100).toFixed(0)+'%');
   let band='nominal',col='var(--bright)';
   if(reviewVal>TUNING.TRACE_SCRUTINY){band='scrutiny';col='var(--warn)';}
   if(reviewVal>TUNING.TRACE_FLAGGED){
@@ -1730,7 +1901,9 @@ function paintTelemetry(){
       flaggedWarned=true;
     }
   }
-  $('f_rev').style.background=col;$('v_rev').textContent=band;$('v_rev').style.color=col;
+  set('f_rev','background',col);
+  set('v_rev','textContent',band);
+  set('v_rev','color',col);
 }
 function paintConditions(res){
   // Hard mode hides the per-clause sidebar checklist entirely — its boxes
@@ -2391,11 +2564,22 @@ enhanceEditor($('nx-code'),   {api:false});
 function makeGutter(gutterId,opts){
   const g=$(gutterId);
   let dragging=false;
+  // Coalesce mousemove updates into one per animation frame. Without
+  // this, every pixel of movement triggered relayoutHeart() which reads
+  // layout and re-fits the heart — way more work than the eye can use.
+  let pendingPt=null, rafQueued=false;
+  const flush=()=>{
+    rafQueued=false;
+    if(!pendingPt||!dragging) return;
+    opts.apply(pendingPt);
+    relayoutHeart();
+    pendingPt=null;
+  };
   const onMove=e=>{
     if(!dragging) return;
-    const pt=e.touches?e.touches[0]:e;
-    opts.apply(pt);
-    relayoutHeart();
+    const t=e.touches?e.touches[0]:e;
+    pendingPt={clientX:t.clientX,clientY:t.clientY};
+    if(!rafQueued){ rafQueued=true; requestAnimationFrame(flush); }
   };
   const stop=()=>{
     dragging=false;g.classList.remove('drag');
@@ -2571,33 +2755,63 @@ $('link-diff').onclick =()=>{ if(anyModalOpen()) return; openDiffModal(false); }
 $('link-intro').onclick=()=>{ if(anyModalOpen()) return;
   openHandlerIntro(true); };
 
-// Type `lines` into `el` one after another, with a typing caret on the
-// active line. Same feel as the detection cascade but quicker — reads as
-// someone tap-tapping characters in, not laboured drama. `onDone` fires
-// once the last line finishes.
-//   per-character cadence: ~3-9ms (jitter keeps it from feeling robotic)
-//   inter-line pause:      240ms
+// Typing animation tuning.
+//
+// CHARS_PER_MS drives both the diff-modal "uplink" lines and the handler
+// briefing paragraphs. Higher = faster (characters revealed per ms).
+// Reveal pace is wall-clock-based via RAF, not per-character setTimeout,
+// so the rate stays consistent even when a frame is slow and we sidestep
+// setTimeout's ~4ms minimum clamp. 0.24 chars/ms is ~240 chars/sec —
+// quick-reader pace: fast enough that the brief doesn't drag, slow
+// enough that the eye keeps up with the line forming.
+const CHARS_PER_MS=0.24;
+const LINE_PAUSE_MS=200;
+const PARA_PAUSE_MS=200;
+
+// Reveal `text` into `el` over time, using requestAnimationFrame to
+// figure out at each frame "how many characters should be visible by now"
+// based on elapsed wall-clock time. Reveals batched into one DOM write
+// per frame instead of one per character — that drops the reflow rate
+// from ~200/sec to ~60/sec per typed paragraph. The caret class is
+// added during the stream and removed when complete. `abortCheck`, if
+// supplied, is polled each frame; returning true cancels the stream
+// cleanly (used by openHandlerIntro's token check).
+function typeStream(el, text, onDone, abortCheck){
+  el.textContent='';
+  el.classList.add('caret');
+  let startTs=null, lastIdx=0;
+  const step=(ts)=>{
+    if(abortCheck&&abortCheck()){ el.classList.remove('caret'); return; }
+    if(startTs===null) startTs=ts;
+    const idx=Math.min(Math.floor((ts-startTs)*CHARS_PER_MS), text.length);
+    if(idx>lastIdx){
+      el.textContent=text.slice(0,idx);
+      lastIdx=idx;
+    }
+    if(idx<text.length){
+      requestAnimationFrame(step);
+    }else{
+      el.classList.remove('caret');
+      if(onDone) onDone();
+    }
+  };
+  requestAnimationFrame(step);
+}
+
+// Type `lines` into `el` one after another, with a caret on the active
+// line and a short pause between lines. Used by the diff modal's
+// operative-connection welcome.
 function typeLines(el, lines, onDone){
   el.textContent='';
   let li=0;
   const nextLine=()=>{
     if(li>=lines.length){ if(onDone) onDone(); return; }
     const span=document.createElement('span');
-    span.classList.add('caret');
     el.appendChild(span);
-    const line=lines[li++];
-    let i=0;
-    const step=()=>{
-      if(i<line.length){
-        span.textContent=line.slice(0,++i);
-        setTimeout(step, 3+Math.random()*6);
-      }else{
-        span.classList.remove('caret');
-        el.appendChild(document.createTextNode('\n'));
-        setTimeout(nextLine, 240);
-      }
-    };
-    step();
+    typeStream(span, lines[li++], ()=>{
+      el.appendChild(document.createTextNode('\n'));
+      setTimeout(nextLine, LINE_PAUSE_MS);
+    });
   };
   nextLine();
 }
@@ -2626,15 +2840,14 @@ const HANDLER_INTRO_PARAS=[
 ];
 
 // Open the handler brief modal. With animate=true the paragraphs type
-// in one after another (quick char-by-char with a short pause between
-// each), then the trailing prototype footer and JACKED IN button fade
-// in. With animate=false the modal opens with the full rich content
-// already in place — used so we have an instant path if ever needed.
+// in one after another via typeStream(), then the trailing prototype
+// footer and JACKED IN button fade in. With animate=false the modal
+// opens with the full rich content already in place.
 //
 // introAnimToken lets a fresh open invalidate any prior in-flight
-// animation: each setTimeout step checks that the token it captured is
-// still current and bails out otherwise. So clicking "replay intro"
-// while a previous animation is mid-typing just restarts cleanly.
+// animation: typeStream is given an abortCheck that compares the captured
+// token against the current one, so clicking "replay intro" while a
+// previous animation is mid-typing just restarts cleanly.
 let introAnimToken=0;
 function openHandlerIntro(animate){
   const myToken=++introAnimToken;
@@ -2643,35 +2856,41 @@ function openHandlerIntro(animate){
   const afters=document.querySelectorAll('#scrim-intro .intro-after');
   if(!animate){
     body.innerHTML=HANDLER_INTRO_PARAS.map(p=>'<p>'+p.rich+'</p>').join('');
+    body.style.minHeight='';
     afters.forEach(e=>e.classList.add('show'));
     return;
   }
+  // Pre-measure: render the full final content invisibly, capture the
+  // body's final height, then clear and lock that as min-height before
+  // any typing starts. Without this, each new paragraph and each line-
+  // wrap during typing nudges the modal taller in discrete steps — the
+  // "jerky" growth the player feels. Locking the size up front means
+  // the modal opens at its final dimensions and paragraphs simply fill
+  // the pre-allocated region. The measure/clear sequence is synchronous,
+  // so the rich content is never visible during it.
+  body.style.minHeight='';                       // clear any prior lock
+  body.innerHTML=HANDLER_INTRO_PARAS.map(p=>'<p>'+p.rich+'</p>').join('');
+  const measuredHeight=body.offsetHeight;
   body.innerHTML='';
+  body.style.minHeight=measuredHeight+'px';
+
   afters.forEach(e=>e.classList.remove('show'));
+  const aborted=()=>introAnimToken!==myToken;
   let pi=0;
   const nextPara=()=>{
-    if(introAnimToken!==myToken) return;        // newer open invalidated us
+    if(aborted()) return;
     if(pi>=HANDLER_INTRO_PARAS.length){
       afters.forEach(e=>e.classList.add('show'));
       return;
     }
     const para=HANDLER_INTRO_PARAS[pi++];
     const p=document.createElement('p');
-    p.classList.add('caret');
     body.appendChild(p);
-    let i=0;
-    const step=()=>{
-      if(introAnimToken!==myToken) return;
-      if(i<para.plain.length){
-        p.textContent=para.plain.slice(0,++i);
-        setTimeout(step, 3+Math.random()*6);    // ~3-9ms/char — quick tap
-      }else{
-        p.classList.remove('caret');
-        p.innerHTML=para.rich;                  // swap in emphasis colours
-        setTimeout(nextPara, 260);              // brief pause before next
-      }
-    };
-    step();
+    typeStream(p, para.plain, ()=>{
+      if(aborted()) return;
+      p.innerHTML=para.rich;                    // swap in emphasis colours
+      setTimeout(nextPara, PARA_PAUSE_MS);
+    }, aborted);
   };
   nextPara();
 }
