@@ -389,6 +389,757 @@ above 0.15 are flagged downstream as a non-natural presentation.
 Note: variance is sensitive to conduction timing. Refer to the
 conduction subsystem regarding any sustained drift in delay.`,
 'amp-controller.txt':
+`[ amp-controller.txt ]   owner: MedCorp Clinical Systems
+Contraction amplitude is governed by the gain setpoint. A healthy
+unit presents amplitude ~1.00 at a cadence of ~72. A reduction in
+cadence unaccompanied by a proportional reduction in amplitude
+presents as anomalous on review.`,
+'conduction-controller.txt':
+`[ conduction-controller.txt ]   owner: MedCorp Clinical Systems
+Atrio-ventricular delay is HARD-LOADED. regulate() cannot set it;
+the unit reads it from this subsystem each cycle. A maintenance
+routine in drift-comp.cfg is ENABLED -- it induces a slow positive
+drift in delay, and sustained drift raises rhythm variance.
+Service personnel may disable it with nano.`,
+};
+function cfgText(file){
+  if(file==='emergency-settings.cfg')
+    return `# MedCorp cardiac safety provision\n`+
+           `FAILSAFE_ENABLED = ${failsafe.enabled?'true':'false'}\n`+
+           `BACKUP_SETPOINT  = ${failsafe.backup}`;
+  if(file==='drift-comp.cfg')
+    return `# conduction maintenance routine\n`+
+           `DRIFT_COMPENSATION = ${conduction.drift?'enabled':'disabled'}`;
+  return null;
+}
+
+// ---- ASCII heart ---------------------------------------------------
+const HB=["      ,d88b.  .d88b,      ","    d8888888888888888b    ",
+"   88888888888888888888   ","   `Y888888888888888Y'    ",
+"     `Y88888888888Y'      ","        `Y8888888Y'       ",
+"           `Y8Y'          ","            `'            "];
+const HS=["       ,d8b. .d8b,        ","      d888888888888b      ",
+"      `Y8888888888Y'      ","        `Y88888Y'         ",
+"           `Y8Y'          ","            `'            ",
+"                          ","                          "];
+const HF=["                          ","                          ",
+"   ___________________    ","                          ",
+"      ( asystole )        ","                          ",
+"                          ","                          "];
+
+// ---- sim state -----------------------------------------------------
+let sim=null,hw,setp,tick,stream,reviewVal,beatPhase,running,playerRegulate=null;
+let libraryText=$('code').value;
+function freshPatient(){
+  hw={bpm:72,rhythmVar:0.05,amp:1.00,cond:120};
+  setp={rate:72,gain:1.00};
+  tick=0;stream=[];reviewVal=0;beatPhase=0;running=false;
+  drawHeart();paintTelemetry();paintConditions(blank());
+  setScore(null);
+}
+const blank=()=>({c:[0,0,0,0,0],win:false});
+
+// ---- terminal ------------------------------------------------------
+function tprint(text,cls){
+  const d=document.createElement('div');
+  if(cls)d.className=cls;
+  d.textContent=text;
+  const o=$('termout');o.appendChild(d);o.scrollTop=o.scrollHeight;
+}
+function techo(c){ tprint('greynet@gn-2241 $ '+c,'u'); }
+
+const CMDS={
+  help(){
+    tprint('commands:');
+    tprint('  scan              list nodes + state');
+    tprint('  breach <node>     crack a sealed node (coding puzzle)');
+    tprint('  ls <node>         list files on a breached node');
+    tprint('  cat <file>        read a file');
+    tprint('  nano <file>       edit a config file');
+    tprint('  inject            open the regulator.js editor');
+    tprint('  run / stop        control the routine');
+    tprint('nodes: n_rate  n_rhythm  n_amp  n_cond','d');
+  },
+  scan(){
+    tprint('MedCorp cardiac unit — 4 nodes');
+    for(const id in NODES)
+      tprint('  '+id.padEnd(10)+NODES[id].name.padEnd(14)+'['+NODES[id].state+']',
+        NODES[id].state==='SEALED'?'e':'ok');
+  },
+  breach(a){
+    if(!NODES[a]){ tprint('breach: unknown node "'+(a||'')+'"','e');return; }
+    if(NODES[a].state!=='SEALED'){ tprint('breach: '+a+' already breached','w');return; }
+    openBreach(a);
+  },
+  ls(a){
+    if(!NODES[a]){ tprint('ls: unknown node "'+(a||'')+'"','e');return; }
+    if(NODES[a].state==='SEALED'){ tprint('ls: '+a+' is sealed — breach it first','e');return; }
+    tprint(a+' — files:');
+    filesFor(a).forEach(f=>tprint('  '+f,'ok'));
+  },
+  cat(a){
+    if(!a){ tprint('cat: name a file','e');return; }
+    if(!findFile(a)){ tprint('cat: '+a+' not found on any breached node','e');return; }
+    (DOCS[a]||cfgText(a)).split('\n').forEach(l=>tprint(l));
+  },
+  nano(a){
+    if(!a){ tprint('nano: name a file','e');return; }
+    const o=findFile(a);
+    if(!o){ tprint('nano: '+a+' not found on any breached node','e');return; }
+    if(!cfgText(a)){ tprint('nano: '+a+' is read-only','e');return; }
+    openNano(o,a);
+  },
+  inject(){
+    if(NODES.n_rate.state==='SEALED'){ tprint('inject: breach RATE CTRL first','e');return; }
+    openEditor();
+  },
+  run(){ if(!$('run').disabled) $('run').onclick(); else tprint('run: nothing to run yet','e'); },
+  stop(){ if(!$('stop').disabled) $('stop').onclick(); },
+};
+function findFile(file){
+  for(const id in NODES){
+    if(NODES[id].state==='SEALED') continue;
+    if(filesFor(id).includes(file)) return id;
+  }
+  return null;
+}
+$('termin').addEventListener('keydown',e=>{
+  if(e.key!=='Enter')return;
+  const raw=e.target.value.trim();e.target.value='';
+  if(!raw)return;
+  techo(raw);
+  const [c,...r]=raw.split(/\s+/);
+  const fn=CMDS[c.toLowerCase()];
+  if(fn) fn(r[0]); else tprint(c+': command not found — try "help"','e');
+});
+
+// ---- node interaction ----------------------------------------------
+document.querySelectorAll('.node').forEach(el=>{
+  el.addEventListener('click',()=>{
+    const id=el.dataset.node;
+    document.querySelectorAll('.node').forEach(n=>n.classList.toggle('sel',n===el));
+    if(NODES[id].state==='SEALED')
+      tprint('// '+id+': you must breach this node first to connect','e');
+    else
+      tprint('// '+id+' breached — ls '+id+'  ·  files: '+filesFor(id).join(', '),'d');
+    $('termin').focus();
+  });
+});
+function setNodeState(id,s){
+  NODES[id].state=s;
+  const el=document.querySelector(`.node[data-node="${id}"]`);
+  el.dataset.state=s;el.querySelector('.st').textContent=s;
+}
+
+// ---- breach modal --------------------------------------------------
+let breachTarget=null;
+function openBreach(id){
+  breachTarget=id;
+  const b=BREACH[id];
+  $('bx-title').textContent='BREACH // '+id+'  ['+b.family+']';
+  $('bx-pairs').innerHTML=b.shown.map(p=>`<span class="p">${p[0]} &rarr; ${p[1]}</span>`).join('');
+  $('bx-code').value='function unlock(n) {\n  return n;   // wrong — fix this\n}';
+  $('bx-res').textContent='';
+  $('scrim-breach').classList.remove('hide');
+  $('bx-code').focus();
+}
+$('bx-cancel').onclick=()=>{ $('scrim-breach').classList.add('hide');$('termin').focus(); };
+$('bx-submit').onclick=()=>{
+  const b=BREACH[breachTarget];
+  let fn;
+  try{ fn=new Function($('bx-code').value+'\n;return unlock;')();
+       if(typeof fn!=='function') throw new Error('no unlock() defined');
+  }catch(err){ $('bx-res').innerHTML='<span style="color:var(--red)">compile error: '+err.message+'</span>';return; }
+  const all=[...b.shown.map(p=>p[0]),...b.test];
+  let ok=true;
+  for(const n of all){ try{ if(fn(n)!==b.rule(n)){ok=false;break;} }catch(e){ok=false;break;} }
+  if(ok){
+    $('bx-res').innerHTML='<span style="color:var(--bright)">port open — access granted</span>';
+    setNodeState(breachTarget,'BREACHED');
+    tprint('// '+breachTarget+' breached — ls '+breachTarget+' to read its files','ok');
+    if(breachTarget==='n_rate') unlockEditor();
+    setTimeout(()=>{ $('scrim-breach').classList.add('hide');$('termin').focus(); },650);
+  }else{
+    $('bx-res').innerHTML='<span style="color:var(--red)">rejected — output did not match the handshake.</span>';
+  }
+};
+
+// ---- nano modal ----------------------------------------------------
+let nanoFile=null;
+function openNano(owner,file){
+  nanoFile=file;
+  $('nx-title').textContent='nano // '+file;
+  $('nx-path').textContent='// '+owner+'/'+file;
+  $('nx-code').value=cfgText(file);
+  $('nx-res').textContent='';
+  $('scrim-nano').classList.remove('hide');
+  $('nx-code').focus();
+}
+$('nx-cancel').onclick=()=>{ $('scrim-nano').classList.add('hide');$('termin').focus(); };
+$('nx-save').onclick=()=>{
+  const txt=$('nx-code').value;
+  if(nanoFile==='emergency-settings.cfg'){
+    const en=/FAILSAFE_ENABLED\s*=\s*(true|false)/i.exec(txt);
+    const bk=/BACKUP_SETPOINT\s*=\s*(-?\d+(?:\.\d+)?)/i.exec(txt);
+    if(!en||!bk){ $('nx-res').innerHTML='<span style="color:var(--red)">parse error — keep both lines</span>';return; }
+    failsafe.enabled=/true/i.test(en[1]);failsafe.backup=clamp(+bk[1],0,200);
+    tprint('// saved emergency-settings.cfg — failsafe '+(failsafe.enabled?'ENABLED':'DISABLED')+
+      ', backup '+failsafe.backup,failsafe.enabled?'w':'ok');
+  }else if(nanoFile==='drift-comp.cfg'){
+    const dc=/DRIFT_COMPENSATION\s*=\s*(enabled|disabled)/i.exec(txt);
+    if(!dc){ $('nx-res').innerHTML='<span style="color:var(--red)">parse error — keep the DRIFT line</span>';return; }
+    conduction.drift=/enabled/i.test(dc[1]);
+    tprint('// saved drift-comp.cfg — drift '+(conduction.drift?'ENABLED':'DISABLED'),
+      conduction.drift?'w':'ok');
+  }
+  $('scrim-nano').classList.add('hide');$('termin').focus();
+};
+
+// ---- script editor -------------------------------------------------
+function unlockEditor(){ $('run').disabled=false;$('edlock').style.display='none'; }
+function openEditor(){ $('errline').style.display='none';$('scrim-editor').classList.remove('hide');$('code').focus(); }
+$('open-editor').onclick=()=>{
+  if(NODES.n_rate.state==='SEALED'){ tprint('// breach RATE CTRL before editing the library','e');return; }
+  openEditor();
+};
+$('ed-close').onclick=()=>{ $('scrim-editor').classList.add('hide');$('termin').focus(); };
+$('ed-save').onclick=()=>{
+  try{ const fn=new Function($('code').value+'\n;return regulate;')();
+       if(typeof fn!=='function') throw new Error('no regulate() function found');
+  }catch(err){
+    const e=$('errline');e.style.display='block';
+    e.textContent='✗ COMPILE ERROR — '+err.message;return;
+  }
+  libraryText=$('code').value;
+  tprint('// regulator.js saved','ok');
+  $('scrim-editor').classList.add('hide');$('termin').focus();
+};
+
+// ---- run control ---------------------------------------------------
+$('run').onclick=()=>{
+  if(running)return;
+  let fn;
+  try{ fn=new Function(libraryText+'\n;return regulate;')();
+       if(typeof fn!=='function') throw new Error('no regulate() found');
+  }catch(err){ tprint('✗ COMPILE ERROR — '+err.message,'e');return; }
+  playerRegulate=fn;
+  if(NODES.n_rate.state==='BREACHED') setNodeState('n_rate','INJECTED');
+  running=true;$('run').disabled=true;$('stop').disabled=false;
+  tprint('// routine running — regulate() imported','ok');
+  sim=setInterval(stepHeart,55);
+};
+$('stop').onclick=()=>{ haltSim();tprint('// routine stopped','d'); };
+$('reset').onclick=()=>{ haltSim();freshPatient();
+  for(const id in NODES){} tprint('// patient reset to baseline','d'); };
+function haltSim(){
+  clearInterval(sim);sim=null;running=false;
+  $('run').disabled=(NODES.n_rate.state==='SEALED');$('stop').disabled=true;
+}
+
+// ---- tick loop (visible sub-steps) ---------------------------------
+function stepHeart(){
+  let req={};
+  try{ req=playerRegulate({...hw,tick})||{}; }catch(e){ req={}; }
+
+  const dRate=Math.abs((req.rate??setp.rate)-setp.rate);
+  reviewVal=clamp(reviewVal+(dRate>3?(dRate-3)*1.4:-0.5),0,100);
+
+  const INERTIA=0.9;
+  setp.rate+=clamp(clamp(req.rate??setp.rate,15,200)-setp.rate,-INERTIA,INERTIA);
+  setp.gain+=clamp(clamp(req.gain??setp.gain,0,1.4)-setp.gain,-0.03,0.03);
+
+  // sub-step: countermeasure — visible flicker if it fires
+  if(failsafe.enabled){
+    const before=setp.rate;
+    setp.rate+=clamp(failsafe.backup-setp.rate,-0.7,0.7);
+    if(Math.abs(setp.rate-before)>0.15) flashFailsafe();
+  }
+
+  hw.bpm+=(setp.rate-hw.bpm)*0.35+(Math.random()-0.5)*0.25;
+  hw.amp+=(setp.gain-hw.amp)*0.30;
+  if(conduction.drift) hw.cond+=0.22;
+  hw.rhythmVar=0.04+Math.abs(hw.cond-120)*0.0024+Math.random()*0.02;
+  hw.bpm=clamp(hw.bpm,0,220);
+  stream.push({bpm:hw.bpm,rhythmVar:hw.rhythmVar,amp:hw.amp,cond:hw.cond});
+
+  tick++;
+  paintTelemetry();
+  const res=checkSignature();
+  paintConditions(res);
+  drawHeart();
+  if(res.win){ endRun(true);return; }
+  if(tick>=2400){ endRun(false);return; }
+}
+let fsTimer=null;
+function flashFailsafe(){
+  const f=$('f_bpm');f.classList.remove('flick');void f.offsetWidth;f.classList.add('flick');
+  document.querySelector('.node[data-node=n_rate]').classList.add('fighting');
+  const a=$('fsalert');a.style.display='block';
+  clearTimeout(fsTimer);fsTimer=setTimeout(()=>{a.style.display='none';
+    document.querySelector('.node[data-node=n_rate]').classList.remove('fighting');},460);
+}
+
+// ---- signature ------------------------------------------------------
+function checkSignature(){
+  const s=stream,n=s.length;
+  if(n<6)return blank();
+  const bpm=s.map(x=>x.bpm),cur=s[n-1];
+  let mono=true;
+  for(let i=1;i<n;i++){ if(bpm[i]>bpm[i-1]+0.6){mono=false;break;} }
+  const fallen=s[0].bpm-cur.bpm>4;
+  const noCliff=bpm.every((v,i)=>i===0||bpm[i-1]-v<14);
+  const gradual=mono&&fallen&&noCliff;
+  const smooth=s.every(x=>x.rhythmVar<0.15);
+  const tracks=Math.abs(cur.amp/Math.max(cur.bpm,1)-(1/72))<0.0028;
+  const arrest=cur.bpm<=42;
+  const c=[mono,gradual,smooth,tracks,arrest];
+  return {c,win:c.every(Boolean)};
+}
+
+// ---- rendering -----------------------------------------------------
+function drawHeart(){
+  const el=$('heart');let frame;
+  if(hw.bpm<24){ frame=HF;el.className='flat'; }
+  else{
+    beatPhase+=hw.bpm/600;
+    const open=Math.floor(beatPhase)%2===0;
+    if(hw.amp<0.55){ frame=open?HS:HF;el.className='weak'; }
+    else{ frame=open?HB:HS;el.className=hw.amp<0.8?'weak':''; }
+  }
+  el.textContent=frame.join('\n');
+}
+function paintTelemetry(){
+  $('v_bpm').textContent=hw.bpm.toFixed(0);
+  $('v_var').textContent=hw.rhythmVar.toFixed(3);
+  $('v_amp').textContent=hw.amp.toFixed(2);
+  $('v_cond').textContent=hw.cond.toFixed(0);
+  $('v_tick').textContent=tick+' / 2400';
+  $('f_bpm').style.width=clamp(hw.bpm/160*100,2,100)+'%';
+  $('f_bpm').style.background='var(--bright)';
+  $('f_var').style.width=clamp(hw.rhythmVar/0.4*100,2,100)+'%';
+  $('f_var').style.background=hw.rhythmVar<0.15?'var(--ink)':'var(--red)';
+  $('f_amp').style.width=clamp(hw.amp/1.4*100,2,100)+'%';
+  $('f_amp').style.background='var(--ink)';
+  $('f_cond').style.width=clamp((hw.cond-80)/220*100,2,100)+'%';
+  $('f_cond').style.background='var(--ink)';
+  $('f_rev').style.width=clamp(reviewVal,4,100)+'%';
+  let band='nominal',col='var(--bright)';
+  if(reviewVal>33){band='scrutiny';col='var(--warn)';}
+  if(reviewVal>66){band='FLAGGED';col='var(--red)';}
+  $('f_rev').style.background=col;$('v_rev').textContent=band;$('v_rev').style.color=col;
+}
+function paintConditions(res){
+  for(let i=0;i<5;i++){
+    const el=$('c'+i);
+    el.classList.toggle('ok',!!res.c[i]);
+    el.querySelector('.box').textContent=res.c[i]?'✓':'·';
+  }
+}
+
+// ---- four-axis scoring ---------------------------------------------
+function setScore(sc){
+  const fld=['time','trace','ram','loc'];
+  if(!sc){ fld.forEach(k=>{$('s_'+k).textContent='—';}); }
+  else fld.forEach(k=>{ $('s_'+k).textContent=sc[k]; });
+  fld.forEach(k=>{ $('b_'+k).textContent='best '+(best[k]==null?'—':best[k]); });
+}
+function computeScore(){
+  // exec time = cycles used; trace = peak review; ram = mock from LoC;
+  // loc = non-empty, non-comment lines of the player's library
+  const lines=libraryText.split('\n')
+    .filter(l=>l.trim()&&!l.trim().startsWith('//')).length;
+  return {
+    time: tick,
+    trace: Math.round(reviewVal)+'%',
+    ram: (2.0+lines*0.15).toFixed(2)+'GB',
+    loc: lines,
+  };
+}
+function recordBest(sc){
+  // lower is better on all four; trace/ram parsed back to number
+  const num={time:sc.time,trace:parseFloat(sc.trace),
+             ram:parseFloat(sc.ram),loc:sc.loc};
+  const improved=[];
+  for(const k of ['time','trace','ram','loc']){
+    if(best[k]==null||num[k]<best[k]){ best[k]=num[k];improved.push(k); }
+  }
+  return improved;
+}
+
+function endRun(win){
+  haltSim();
+  if(win){
+    const sc=computeScore();
+    setScore(sc);
+    const improved=recordBest({time:sc.time,trace:sc.trace,ram:sc.ram,loc:sc.loc});
+    setScore(sc); // refresh best labels
+    $('rx-title').textContent='✓ CONTRACT COMPLETE';
+    $('rx-sub').textContent='// run logged as SENESCENT DECLINE';
+    $('rx-body').innerHTML=
+      '<div class="verdict win">FAILURE SIGNATURE MET</div>'+
+      '<p>Scored on four axes — each is its own optimisation puzzle. '+
+      'They trade off: a faster solve floods the node and dirties the trace; '+
+      'terser code is rarely fastest. Beat your own bests.</p>'+
+      '<div class="score" style="margin-top:4px">'+
+      axCard('EXEC TIME',sc.time,improved.includes('time'))+
+      axCard('TRACE',sc.trace,improved.includes('trace'))+
+      axCard('RAM',sc.ram,improved.includes('ram'))+
+      axCard('LINES',sc.loc,improved.includes('loc'))+'</div>'+
+      (improved.length?'<p style="color:var(--bright);margin-top:10px">★ new personal best: '
+        +improved.join(', ')+'</p>':'<p class="small">no axis beaten this run — try a different approach.</p>');
+    tprint('// CONTRACT COMPLETE — time '+sc.time+' · trace '+sc.trace+
+           ' · ram '+sc.ram+' · loc '+sc.loc,'ok');
+  }else{
+    $('rx-title').textContent='✗ CYCLE BUDGET EXPIRED';
+    $('rx-sub').textContent='// the signature was not met in time';
+    $('rx-body').innerHTML='<div class="verdict fail">CONTRACT FAILED</div>'+
+      '<p>Check which signature conditions stayed red, and why. The docs on '+
+      'each node explain the system — and its countermeasures.</p>';
+    tprint('// cycle budget expired — contract failed','e');
+  }
+  $('scrim-result').classList.remove('hide');
+}
+function axCard(k,v,star){
+  return '<div class="sax"><div class="k">'+k+(star?' ★':'')+'</div>'+
+         '<div class="v" style="'+(star?'color:var(--bright)':'')+'">'+v+'</div></div>';
+}
+$('rx-close').onclick=()=>{ $('scrim-result').classList.add('hide');$('termin').focus(); };
+
+// ---- boot ----------------------------------------------------------
+$('deploy').onclick=()=>{ $('scrim-intro').classList.add('hide');$('termin').focus(); };
+freshPatient();
+tprint('GREYNET link established — contract GN-2241 "Quiet Hours" loaded','ok');
+tprint('type  help  for commands, or  scan  to see the target.','d');
+</script>
+</body>
+</html>  /* connector lines drawn behind nodes */
+  #links{position:absolute;inset:0;pointer-events:none}
+
+  /* right: telemetry + signature + score sidebar */
+  .sidebar{width:312px;border-left:1px solid var(--edge);display:flex;flex-direction:column;overflow-y:auto}
+  .sect{border-bottom:1px solid var(--edge);padding:10px 11px}
+  .sect h3{font-size:9px;letter-spacing:1.5px;color:var(--dim);margin-bottom:8px;text-transform:uppercase}
+  .trow{margin-bottom:7px}
+  .tlab{display:flex;justify-content:space-between;font-size:10px}
+  .tlab b{color:var(--bright);font-weight:400}
+  .bar{height:6px;background:#010801;border:1px solid var(--edge);border-radius:2px;margin-top:3px;overflow:hidden}
+  .fill{height:100%;width:50%;transition:width .1s linear,background .25s}
+  .fill.flick{animation:flick .34s ease}
+  @keyframes flick{0%{filter:brightness(2.8)}45%{filter:brightness(.35)}100%{filter:brightness(1)}}
+  .cond{display:flex;gap:6px;align-items:flex-start;padding:4px 0;font-size:10.5px}
+  .box{flex:none;width:12px;height:12px;border:1px solid var(--edge2);border-radius:2px;
+    text-align:center;line-height:10px;font-size:9px;color:var(--dim);margin-top:1px}
+  .cond.ok .box{border-color:var(--bright);color:var(--bright);box-shadow:0 0 5px rgba(125,255,138,.4)}
+  .cond.ok{color:var(--hi)}
+  .meter{height:8px;background:#010801;border:1px solid var(--edge);border-radius:2px;overflow:hidden}
+  .meter-fill{height:100%;width:6%;background:var(--bright);transition:width .2s,background .2s}
+  /* four-axis score readout */
+  .score{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .sax{border:1px solid var(--edge);border-radius:2px;padding:5px 7px}
+  .sax .k{font-size:8px;letter-spacing:1px;color:var(--dim)}
+  .sax .v{font-size:13px;color:var(--bright)}
+  .sax .b{font-size:8px;color:var(--cyan)}
+
+  /* ===== terminal: bottom bar ===== */
+  #term{height:188px;border-top:1px solid var(--edge2);background:#010801;
+    display:flex;flex-direction:column}
+  #termhead{font-size:9px;letter-spacing:1.5px;color:var(--dim);padding:5px 11px;
+    border-bottom:1px solid var(--edge);display:flex}
+  #termhead .hint{margin-left:auto;color:var(--edge2)}
+  #termout{flex:1;overflow-y:auto;padding:7px 11px;font-size:11.5px;line-height:1.5}
+  #termout div{white-space:pre-wrap;word-break:break-word}
+  #termout .u{color:var(--hi)} #termout .e{color:var(--red)}
+  #termout .ok{color:var(--bright)} #termout .w{color:var(--warn)} #termout .d{color:var(--dim)}
+  .terminline{display:flex;border-top:1px solid var(--edge);align-items:center;padding:0 11px}
+  .terminline .pr{color:var(--bright);flex:none;margin-right:7px;font-size:11.5px}
+  #termin{flex:1;background:transparent;border:none;outline:none;color:var(--hi);
+    font-family:var(--mono);font-size:11.5px;padding:7px 0}
+
+  /* ===== modals ===== */
+  .scrim{position:fixed;inset:0;background:rgba(0,3,0,.93);z-index:50;
+    display:flex;align-items:center;justify-content:center;padding:22px}
+  .scrim.hide{display:none}
+  .modal{max-width:640px;width:100%;background:var(--panel);border:1px solid var(--edge2);
+    border-radius:4px;padding:22px;box-shadow:0 0 44px rgba(60,174,74,.16);
+    max-height:88vh;overflow-y:auto}
+  .modal h3{color:var(--bright);letter-spacing:3px;font-size:15px;margin-bottom:3px;
+    text-shadow:0 0 8px rgba(125,255,138,.4)}
+  .modal .mt{color:var(--dim);font-size:11px;letter-spacing:1px;margin-bottom:14px}
+  .modal p{font-size:12px;margin-bottom:11px;color:var(--ink)}
+  .modal b{color:var(--hi);font-weight:400}
+  .verb{display:flex;gap:9px;font-size:11.5px;margin-bottom:7px;align-items:baseline}
+  .verb .n{flex:none;width:132px;color:var(--warn);letter-spacing:1px}
+  .modal .ph{font-size:10px;color:var(--dim);border-top:1px solid var(--edge);
+    margin-top:13px;padding-top:9px}
+  .modal .mbtn{margin-top:15px;display:flex;gap:8px;justify-content:flex-end}
+  .modal textarea{width:100%;background:#010801;border:1px solid var(--edge2);color:var(--hi);
+    font-family:var(--mono);font-size:12px;padding:8px;border-radius:2px;line-height:1.45;tab-size:2}
+  .mres{font-size:11px;margin-top:8px;min-height:16px}
+  .pairs{margin:8px 0;font-size:13px}
+  .pairs .p{display:inline-block;border:1px solid var(--edge2);border-radius:2px;
+    padding:2px 9px;margin:3px 5px 3px 0;color:var(--hi);letter-spacing:1px}
+  .doc{white-space:pre-wrap;font-size:11px;color:var(--ink);border-left:2px solid var(--cyan);
+    padding-left:9px;margin:8px 0}
+  .filelist{margin:6px 0}
+  .filelist .f{font-size:11px;color:var(--cyan);cursor:pointer;padding:2px 0}
+  .filelist .f:hover{color:var(--hi)}
+  .verdict{display:none;text-align:center;padding:12px;border-radius:3px;
+    font-size:13px;letter-spacing:1px;margin:10px 0}
+  .verdict.win{display:block;border:1px solid var(--bright);color:var(--bright);background:rgba(125,255,138,.07)}
+  .verdict.fail{display:block;border:1px solid var(--red);color:var(--red);background:rgba(224,85,106,.07)}
+  .small{font-size:10px;color:var(--dim);margin-top:5px}
+  /* script editor modal — sits over the running system */
+  #scrim-editor .modal{max-width:720px}
+  #editorhead{display:flex;align-items:center;margin-bottom:8px}
+  #editorhead .et{color:var(--warn);font-size:12px;letter-spacing:1px}
+  #code{width:100%;height:230px}
+  .errline{color:var(--red);font-size:11px;margin-top:7px;letter-spacing:.3px;display:none;
+    border:1px solid var(--red);border-radius:2px;padding:6px 8px;background:rgba(224,85,106,.06)}
+</style>
+</head>
+<body>
+
+<!-- ===== ONBOARDING ===== -->
+<div class="scrim" id="scrim-intro">
+  <div class="modal">
+    <h3>GREYNET</h3>
+    <div class="mt">// OPERATING THEATRE — contract GN-2241 "Quiet Hours" — Tier T2</div>
+    <p>You are a contractor. A client wants a target's <b>mechanical heart</b> to
+      fail — bradycardic arrest, reading as decline, not attack. The implant runs
+      on four networked controllers. You break it by <b>writing code</b>.</p>
+    <p>You work through the <b>terminal</b> at the bottom of the screen:</p>
+    <div class="verb"><span class="n">breach &lt;node&gt;</span>
+      <span>crack a node's port — a coding puzzle.</span></div>
+    <div class="verb"><span class="n">ls / cat &lt;node&gt;</span>
+      <span>list and read a breached node's files. The docs are the solution.</span></div>
+    <div class="verb"><span class="n">nano &lt;file&gt;</span>
+      <span>edit a config file — to defeat a node's countermeasure.</span></div>
+    <div class="verb"><span class="n">inject</span>
+      <span>open the script editor and write <code class="k">regulate()</code> —
+        the routine imports it each cardiac cycle.</span></div>
+    <div class="verb"><span class="n">run / stop</span>
+      <span>execute the routine; drive the heart to the signature.</span></div>
+    <p style="margin-top:12px">Win by meeting the <b>five-part failure
+      signature</b> on the right. Every solve is then <b>scored on four axes</b>
+      — time, trace, RAM, lines of code — for you to beat on the next run.
+      Type <code class="k">help</code> any time.</p>
+    <div class="ph">Prototype — the breach puzzle is a placeholder for the full
+      breach minigame (Pillar 3). Everything else is the intended loop.</div>
+    <div class="mbtn"><button class="go" id="deploy">▶ CONNECT TO TARGET</button></div>
+  </div>
+</div>
+
+<!-- ===== BREACH MODAL ===== -->
+<div class="scrim hide" id="scrim-breach">
+  <div class="modal">
+    <h3 id="bx-title">BREACH</h3>
+    <div class="mt">// port handshake captured — reproduce it to gain access</div>
+    <p>The port answered these probes. Write <code class="k">unlock(n)</code> so it
+      returns the same response for every input.</p>
+    <div class="pairs" id="bx-pairs"></div>
+    <textarea id="bx-code" rows="5" spellcheck="false"></textarea>
+    <div class="mres" id="bx-res"></div>
+    <div class="mbtn">
+      <button id="bx-cancel">CANCEL</button>
+      <button class="go" id="bx-submit">▶ SUBMIT UNLOCK</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== NANO MODAL ===== -->
+<div class="scrim hide" id="scrim-nano">
+  <div class="modal">
+    <h3 id="nx-title">nano</h3>
+    <div class="mt" id="nx-path">// editing config</div>
+    <p>Edit the config and save. The subsystem reads this file each cycle.</p>
+    <textarea id="nx-code" rows="6" spellcheck="false"></textarea>
+    <div class="mres" id="nx-res"></div>
+    <div class="mbtn">
+      <button id="nx-cancel">CANCEL</button>
+      <button class="go" id="nx-save">▶ SAVE</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SCRIPT EDITOR MODAL ===== -->
+<div class="scrim hide" id="scrim-editor">
+  <div class="modal">
+    <div id="editorhead">
+      <span class="et">regulator.js</span>
+    </div>
+    <textarea id="code" spellcheck="false">// regulate() is called once per cardiac cycle.
+// t = { bpm, rhythmVar, amp, cond, tick }
+// return requested setpoints: { rate, gain }
+// This starter keeps the patient HEALTHY. Sabotage is up to you.
+
+function regulate(t) {
+  return {
+    rate: 72,    // hold a healthy rate
+    gain: 1.0    // hold healthy contraction
+  };
+}</textarea>
+    <div class="errline" id="errline"></div>
+    <div class="mbtn">
+      <button id="ed-close">CLOSE</button>
+      <button class="go" id="ed-save">▶ SAVE LIBRARY</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CONTRACT COMPLETE MODAL ===== -->
+<div class="scrim hide" id="scrim-result">
+  <div class="modal">
+    <h3 id="rx-title">CONTRACT COMPLETE</h3>
+    <div class="mt" id="rx-sub"></div>
+    <div id="rx-body"></div>
+    <div class="mbtn">
+      <button class="go" id="rx-close">▶ CONTINUE</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MAIN ===== -->
+<div id="strip">
+  <h1>GREYNET</h1>
+  <span class="sub">// OPERATING THEATRE</span>
+  <span class="tag">GN-2241 · "QUIET HOURS" · T2 · L4</span>
+</div>
+
+<div id="conn">
+  <div id="sysview">
+
+    <!-- system map -->
+    <div id="mapwrap">
+      <h2>MedCorp cardiac unit — click a node, or use the terminal</h2>
+      <div id="stage">
+        <svg id="links"></svg>
+        <div id="heart"></div>
+        <div class="node" data-node="n_rate"   data-state="SEALED" style="top:16%;left:31%">
+          RATE CTRL<span class="st">SEALED</span></div>
+        <div class="node" data-node="n_rhythm" data-state="SEALED" style="top:16%;right:26%">
+          RHYTHM CTRL<span class="st">SEALED</span></div>
+        <div class="node" data-node="n_amp"    data-state="SEALED" style="bottom:22%;left:24%">
+          AMP CTRL<span class="st">SEALED</span></div>
+        <div class="node" data-node="n_cond"   data-state="SEALED" style="bottom:22%;right:22%">
+          CONDUCTION<span class="st">SEALED</span></div>
+      </div>
+    </div>
+
+    <!-- sidebar -->
+    <div class="sidebar">
+      <div class="sect">
+        <h3>Failure signature — T2, all five</h3>
+        <div class="cond" id="c0"><span class="box">·</span><span><b>BPM falling</b> — never rises</span></div>
+        <div class="cond" id="c1"><span class="box">·</span><span><b>Gradual</b> — fallen, no collapse</span></div>
+        <div class="cond" id="c2"><span class="box">·</span><span><b>Variance &lt; 0.15</b> — stays smooth</span></div>
+        <div class="cond" id="c3"><span class="box">·</span><span><b>Amp tracks rate</b></span></div>
+        <div class="cond" id="c4"><span class="box">·</span><span><b>Arrest</b> — BPM &le; 42</span></div>
+      </div>
+      <div class="sect">
+        <h3>Telemetry</h3>
+        <div class="trow"><div class="tlab"><span>BPM</span><b id="v_bpm">72</b></div>
+          <div class="bar"><div class="fill" id="f_bpm"></div></div></div>
+        <div class="trow"><div class="tlab"><span>RHYTHM VAR</span><b id="v_var">0.05</b></div>
+          <div class="bar"><div class="fill" id="f_var"></div></div></div>
+        <div class="trow"><div class="tlab"><span>AMPLITUDE</span><b id="v_amp">1.00</b></div>
+          <div class="bar"><div class="fill" id="f_amp"></div></div></div>
+        <div class="trow"><div class="tlab"><span>CONDUCTION ms</span><b id="v_cond">120</b></div>
+          <div class="bar"><div class="fill" id="f_cond"></div></div></div>
+      </div>
+      <div class="sect">
+        <h3>Trace meter</h3>
+        <div class="tlab"><span style="color:var(--dim)">monitoring</span>
+          <b id="v_rev" style="color:var(--bright)">nominal</b></div>
+        <div class="meter" style="margin-top:4px"><div class="meter-fill" id="f_rev"></div></div>
+        <div id="fsalert" style="display:none;color:var(--red);font-size:9px;
+          letter-spacing:1px;margin-top:6px">⚠ COUNTERMEASURE TRIGGERED</div>
+      </div>
+      <div class="sect">
+        <h3>Run score — beat your best</h3>
+        <div class="score">
+          <div class="sax"><div class="k">EXEC TIME</div><div class="v" id="s_time">—</div>
+            <div class="b" id="b_time">best —</div></div>
+          <div class="sax"><div class="k">TRACE</div><div class="v" id="s_trace">—</div>
+            <div class="b" id="b_trace">best —</div></div>
+          <div class="sax"><div class="k">RAM</div><div class="v" id="s_ram">—</div>
+            <div class="b" id="b_ram">best —</div></div>
+          <div class="sax"><div class="k">LINES</div><div class="v" id="s_loc">—</div>
+            <div class="b" id="b_loc">best —</div></div>
+        </div>
+        <div class="small">cycle <b id="v_tick" style="color:var(--ink)">0 / 2400</b></div>
+      </div>
+      <div class="sect" style="border-bottom:none">
+        <h3>Routine control</h3>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <button id="open-editor">✎ EDIT LIBRARY</button>
+          <button class="go" id="run" disabled>▶ RUN</button>
+          <button id="stop" disabled>■ STOP</button>
+          <button id="reset">↺ RESET</button>
+        </div>
+        <div id="edlock" class="small" style="color:var(--red)">breach RATE CTRL to unlock the library editor</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- terminal bar -->
+  <div id="term">
+    <div id="termhead"><span>TERMINAL</span><span class="hint">help · scan · breach · ls · cat · nano · inject · run</span></div>
+    <div id="termout"></div>
+    <div class="terminline">
+      <span class="pr">greynet@gn-2241 $</span>
+      <input id="termin" autocomplete="off" spellcheck="false">
+    </div>
+  </div>
+</div>
+
+<script>
+//=====================================================================
+// GREYNET Operating Theatre — final-look prototype
+//=====================================================================
+const $=id=>document.getElementById(id);
+const clamp=(v,lo,hi)=>v<lo?lo:v>hi?hi:v;
+
+// ---- state ---------------------------------------------------------
+const NODES={
+  n_rate:  {name:'RATE CTRL',   state:'SEALED'},
+  n_rhythm:{name:'RHYTHM CTRL', state:'SEALED'},
+  n_amp:   {name:'AMP CTRL',    state:'SEALED'},
+  n_cond:  {name:'CONDUCTION',  state:'SEALED'},
+};
+const failsafe={enabled:true,backup:72};
+const conduction={drift:true};
+let best={time:null,trace:null,ram:null,loc:null};   // four-axis personal bests
+
+const BREACH={
+  n_rate:  {rule:n=>n*2+1, shown:[[3,7],[5,11],[8,17]], test:[4,6,9], family:'cipher_linear'},
+  n_rhythm:{rule:n=>n*n,   shown:[[2,4],[3,9],[5,25]],  test:[4,6,7], family:'cipher_square'},
+  n_amp:   {rule:n=>n+n,   shown:[[3,6],[7,14],[9,18]], test:[2,5,8], family:'cipher_double'},
+  n_cond:  {rule:n=>n*10,  shown:[[2,20],[4,40],[6,60]],test:[3,5,8], family:'cipher_decade'},
+};
+function filesFor(id){
+  return ({
+    n_rate:  ['rate-controller.txt','emergency-settings.cfg'],
+    n_rhythm:['rhythm-controller.txt'],
+    n_amp:   ['amp-controller.txt'],
+    n_cond:  ['conduction-controller.txt','drift-comp.cfg'],
+  })[id]||[];
+}
+const DOCS={
+'rate-controller.txt':
+`[ rate-controller.txt ]   owner: MedCorp Clinical Systems
+The cadence subsystem accepts a regulate() routine. Each cycle it
+receives telemetry and returns a requested { rate, gain }.
+For patient wellbeing, a safety provision -- emergency-settings.cfg
+-- continuously restores cadence toward a nominal backup setpoint
+if the regulator requests an unsafe value. Service personnel may
+amend that file with nano.`,
+'rhythm-controller.txt':
+`[ rhythm-controller.txt ]   owner: MedCorp Clinical Systems
+Beat-interval variance indicates rhythm stability. Values at or
+above 0.15 are flagged downstream as a non-natural presentation.
+Note: variance is sensitive to conduction timing. Refer to the
+conduction subsystem regarding any sustained drift in delay.`,
+'amp-controller.txt':
 `[  #strip .tag{margin-left:auto;color:var(--warn);font-size:10px;letter-spacing:1px}
   #zoomctl{display:flex;align-items:center;gap:6px}
   #zoomctl button{padding:2px 8px;font-size:11px;line-height:1.2}
