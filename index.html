@@ -11,8 +11,9 @@
     --warn:#d8c031;--red:#e0556a;--cyan:#46c8b8;--mono:'Courier New',ui-monospace,monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%;overflow:hidden}
+  html{height:100%;overflow:hidden}
   body{
+    height:100%;overflow:auto;display:flex;flex-direction:column;
     background:var(--bg);color:var(--ink);font-family:var(--mono);
     font-size:13px;line-height:1.5;
     background-image:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(60,174,74,.02) 2px,rgba(60,174,74,.02) 3px);
@@ -29,52 +30,89 @@
 
   /* ===== top status strip ===== */
   #strip{height:34px;display:flex;align-items:center;gap:14px;padding:0 14px;
-    border-bottom:1px solid var(--edge);background:var(--panel)}
+    border-bottom:1px solid var(--edge);background:var(--panel);flex:none}
   #strip h1{font-size:13px;letter-spacing:4px;color:var(--bright);font-weight:700;
     text-shadow:0 0 8px rgba(125,255,138,.5)}
   #strip .sub{color:var(--dim);font-size:10px;letter-spacing:1px}
   #strip .tag{margin-left:auto;color:var(--warn);font-size:10px;letter-spacing:1px}
+  #zoomctl{display:flex;align-items:center;gap:6px}
+  #zoomctl button{padding:2px 8px;font-size:11px;line-height:1.2}
+  #zoom-val{font-size:10px;color:var(--dim);min-width:34px;text-align:center}
 
   /* ===== connected view: ascii fills upper area, terminal a bottom bar ===== */
-  #conn{position:absolute;top:34px;left:0;right:0;bottom:0;display:flex;flex-direction:column}
-  #sysview{flex:1;display:flex;overflow:hidden}
+  /* conn is a ROW: left column (heart over terminal) + full-height sidebar */
+  #conn{flex:1;min-height:0;display:flex;flex-direction:row}
+  #leftcol{flex:1;min-width:0;display:flex;flex-direction:column}
 
-  /* left: the animated system map */
-  #mapwrap{flex:1;position:relative;overflow:hidden}
+  /* drag handles between resizable panels */
+  .gutter{flex:none;background:var(--edge);transition:background .12s}
+  .gutter:hover,.gutter.drag{background:var(--bright)}
+  .gutter-h{height:5px;cursor:row-resize}      /* heart <-> terminal */
+  .gutter-v{width:5px;cursor:col-resize}       /* left column <-> sidebar */
+
+  /* left column, upper part: the animated system map */
+  #mapwrap{flex:1;min-height:0;position:relative;overflow:hidden}
   #mapwrap h2,.sidebar h2{font-size:10px;letter-spacing:2px;color:var(--dim);
     font-weight:700;text-transform:uppercase;padding:7px 11px;border-bottom:1px solid var(--edge)}
   #stage{position:absolute;top:30px;left:0;right:0;bottom:0;
-    display:flex;align-items:center;justify-content:center}
-  #heart{white-space:pre;font-size:15px;line-height:1.04;color:var(--bright);
-    text-shadow:0 0 13px rgba(125,255,138,.5);transition:color .3s}
-  #heart.weak{color:var(--ink);text-shadow:0 0 7px rgba(60,174,74,.3)}
-  #heart.flat{color:var(--dim);text-shadow:none}
-  .node{position:absolute;cursor:pointer;border:1px solid var(--edge2);
-    background:rgba(2,10,2,.95);border-radius:2px;padding:3px 8px;font-size:10px;
-    letter-spacing:.5px;color:var(--dim);transition:all .12s;user-select:none;text-align:center}
-  .node:hover{border-color:var(--bright);color:var(--bright);box-shadow:0 0 10px rgba(125,255,138,.22)}
-  .node.sel{border-color:var(--warn);color:var(--warn);box-shadow:0 0 11px rgba(216,192,49,.32)}
-  .node .st{display:block;font-size:8px;margin-top:1px;letter-spacing:1px}
-  .node[data-state=SEALED] .st{color:var(--red)}
-  .node[data-state=BREACHED] .st{color:var(--warn)}
-  .node[data-state=CLEARED] .st{color:var(--cyan)}
-  .node[data-state=INJECTED] .st{color:var(--bright)}
-  .node.fighting{animation:fight .5s infinite}
-  @keyframes fight{0%,100%{border-color:var(--red)}50%{border-color:var(--edge2)}}
-  /* connector lines drawn behind nodes */
-  #links{position:absolute;inset:0;pointer-events:none}
+    display:flex;align-items:center;justify-content:center;padding:10px;
+    overflow:hidden}
+  #heartbox{position:relative;display:inline-block;transform-origin:center center}
+  /* the heart art — small monospace, the beat is a transform+filter pulse */
+  #heart{white-space:pre;font-size:7px;line-height:1.0;color:var(--bright);
+    letter-spacing:0;font-weight:700;
+    text-shadow:0 0 5px rgba(125,255,138,.45);
+    transition:filter .04s linear;transform-origin:50% 56%}
+  /* individual glyphs — the bloodflow trace brightens these in place */
+  #heart .g{color:inherit;transition:color .05s linear,text-shadow .05s linear}
+  #heart.weak{color:#7fd98a}
+  #heart.flat{color:var(--dim)}
 
-  /* right: telemetry + signature + score sidebar */
-  .sidebar{width:312px;border-left:1px solid var(--edge);display:flex;flex-direction:column;overflow-y:auto}
+  /* node panels — small inset cells on the heart surface */
+  .hotzone{position:absolute;cursor:pointer;z-index:6;
+    transform:translate(-50%,-50%);
+    border:1px solid var(--pcol,var(--edge2));
+    background:rgba(2,8,2,.82);border-radius:3px;
+    padding:3px 7px;min-width:84px;text-align:center;
+    box-shadow:0 0 12px rgba(0,5,0,.85),
+               inset 0 0 8px color-mix(in srgb,var(--pcol) 22%,transparent);
+    transition:box-shadow .12s,border-color .12s}
+  .hotzone:hover{box-shadow:0 0 14px color-mix(in srgb,var(--pcol) 55%,transparent),
+               inset 0 0 8px color-mix(in srgb,var(--pcol) 30%,transparent)}
+  .hotzone.sel{outline:1px solid var(--warn);outline-offset:1px}
+  .hotzone .pnl-tag{display:block;font-size:8.5px;letter-spacing:1px;
+    color:var(--hi)}
+  .hotzone .pnl-st{display:block;font-size:8px;letter-spacing:1.5px;
+    color:var(--pcol);text-shadow:0 0 6px var(--pcol);margin-top:1px}
+  .hotzone.fighting{animation:pfight .42s ease}
+  @keyframes pfight{0%,100%{border-color:var(--pcol)}
+    40%{border-color:var(--red);box-shadow:0 0 18px var(--red)}}
+  /* a faint lead line from the panel toward the heart, for the "tapped in" read */
+  .hotzone::after{content:'';position:absolute;left:50%;bottom:-7px;
+    width:1px;height:7px;background:var(--pcol);opacity:.5}
+
+  /* right: full-height sidebar — telemetry, signature, score, controls */
+  .sidebar{width:312px;flex:none;border-left:1px solid var(--edge);
+    display:flex;flex-direction:column;overflow-y:auto}
   .sect{border-bottom:1px solid var(--edge);padding:10px 11px}
   .sect h3{font-size:9px;letter-spacing:1.5px;color:var(--dim);margin-bottom:8px;text-transform:uppercase}
+  .sect.telem h3{color:var(--cyan)}
   .trow{margin-bottom:7px}
   .tlab{display:flex;justify-content:space-between;font-size:10px}
-  .tlab b{color:var(--bright);font-weight:400}
+  .tlab span{color:var(--dim)}
+  .tlab b{color:var(--bright);font-weight:400;transition:color .25s}
   .bar{height:6px;background:#010801;border:1px solid var(--edge);border-radius:2px;margin-top:3px;overflow:hidden}
   .fill{height:100%;width:50%;transition:width .1s linear,background .25s}
   .fill.flick{animation:flick .34s ease}
   @keyframes flick{0%{filter:brightness(2.8)}45%{filter:brightness(.35)}100%{filter:brightness(1)}}
+  /* the telemetry NUMBER pulses too when a countermeasure yanks it back */
+  .numflick{animation:numflick .34s ease}
+  @keyframes numflick{
+    0%{transform:scale(1)}
+    25%{transform:scale(1.35);color:var(--red)!important;text-shadow:0 0 9px var(--red)}
+    60%{transform:scale(.92);color:var(--red)!important}
+    100%{transform:scale(1)}
+  }
   .cond{display:flex;gap:6px;align-items:flex-start;padding:4px 0;font-size:10.5px}
   .box{flex:none;width:12px;height:12px;border:1px solid var(--edge2);border-radius:2px;
     text-align:center;line-height:10px;font-size:9px;color:var(--dim);margin-top:1px}
@@ -89,13 +127,18 @@
   .sax .v{font-size:13px;color:var(--bright)}
   .sax .b{font-size:8px;color:var(--cyan)}
 
-  /* ===== terminal: bottom bar ===== */
-  #term{height:188px;border-top:1px solid var(--edge2);background:#010801;
-    display:flex;flex-direction:column}
+  /* ===== terminal: foot of the left column, up to the sidebar =====
+     Default height is generous so the structured `cat` docs render in
+     one shot without heavy scrolling. The gutter above lets the user
+     resize from here. */
+  #term{height:340px;flex:none;border-top:1px solid var(--edge2);
+    background:#010801;display:flex;flex-direction:column}
   #termhead{font-size:9px;letter-spacing:1.5px;color:var(--dim);padding:5px 11px;
     border-bottom:1px solid var(--edge);display:flex}
   #termhead .hint{margin-left:auto;color:var(--edge2)}
-  #termout{flex:1;overflow-y:auto;padding:7px 11px;font-size:11.5px;line-height:1.5}
+  #termout{flex:1;overflow-y:auto;padding:7px 11px;font-size:11.5px;line-height:1.35}
+  /* preserve runs of spaces (cat docs use them for key/value alignment
+     and ASCII rule lines); wrap long lines so nothing escapes width */
   #termout div{white-space:pre-wrap;word-break:break-word}
   #termout .u{color:var(--hi)} #termout .e{color:var(--red)}
   #termout .ok{color:var(--bright)} #termout .w{color:var(--warn)} #termout .d{color:var(--dim)}
@@ -123,6 +166,32 @@
   .modal .mbtn{margin-top:15px;display:flex;gap:8px;justify-content:flex-end}
   .modal textarea{width:100%;background:#010801;border:1px solid var(--edge2);color:var(--hi);
     font-family:var(--mono);font-size:12px;padding:8px;border-radius:2px;line-height:1.45;tab-size:2}
+
+  /* ===== syntax highlighting ==========================================
+     A <pre.hl> sits exactly behind the textarea showing coloured code;
+     the textarea on top has transparent text but a visible caret. Both
+     must share font, size, padding, border, line-height and box model
+     so the glyphs line up perfectly. */
+  .edwrap{position:relative}
+  .edwrap textarea,.edwrap .hl{
+    margin:0;font-family:var(--mono);font-size:12px;line-height:1.45;
+    tab-size:2;padding:8px;border:1px solid transparent;border-radius:2px;
+    box-sizing:border-box;white-space:pre-wrap;word-break:break-word;
+    overflow-wrap:break-word;letter-spacing:0;}
+  .edwrap textarea{position:relative;z-index:2;background:transparent;
+    color:transparent;caret-color:var(--hi);border-color:var(--edge2);
+    resize:vertical;}
+  .edwrap textarea::selection{background:rgba(125,255,138,.25);color:transparent;}
+  .edwrap .hl{position:absolute;inset:0;z-index:1;background:#010801;
+    color:var(--ink);pointer-events:none;overflow:hidden;}
+  /* token colours */
+  .hl .t-key{color:#7dc4ff;}            /* keywords */
+  .hl .t-str{color:#e0c060;}            /* strings */
+  .hl .t-num{color:#c89bff;}            /* numbers */
+  .hl .t-com{color:#4f7d56;font-style:italic;}  /* comments */
+  .hl .t-fn {color:#7dffba;}            /* function / API names */
+  .hl .t-op {color:#9aa;}               /* punctuation */
+  .hl .t-cfg{color:#7dffba;}            /* config keys */
   .mres{font-size:11px;margin-top:8px;min-height:16px}
   .pairs{margin:8px 0;font-size:13px}
   .pairs .p{display:inline-block;border:1px solid var(--edge2);border-radius:2px;
@@ -142,8 +211,91 @@
   #editorhead{display:flex;align-items:center;margin-bottom:8px}
   #editorhead .et{color:var(--warn);font-size:12px;letter-spacing:1px}
   #code{width:100%;height:230px}
+  #scriptcode{width:100%;height:300px}
   .errline{color:var(--red);font-size:11px;margin-top:7px;letter-spacing:.3px;display:none;
     border:1px solid var(--red);border-radius:2px;padding:6px 8px;background:rgba(224,85,106,.06)}
+
+  /* ===== mobile — narrow screens =====================================
+     Not built for serious play on a phone, but it should look good:
+     open the link and you get the beating heart filling the screen,
+     then scroll down through the panels. A nudge to open it on a PC. */
+  @media (max-width: 760px){
+    /* release the locked full-height layout so the page can scroll */
+    html{overflow:auto}
+    body{height:auto;min-height:100%;display:block}
+    #strip{position:sticky;top:0;z-index:20;flex-wrap:wrap;height:auto;
+      padding:6px 12px;gap:8px}
+    #strip .tag{font-size:9px}
+    #zoomctl{display:none}                 /* pinch-zoom does the job here */
+    .gutter{display:none}                  /* no panel-resizing on mobile */
+
+    /* everything stacks into one vertical scroll */
+    #conn{display:block}
+    #leftcol{display:block}
+
+    /* the heart gets its own near-full-screen panel, first thing you see */
+    #mapwrap{height:82vh}
+    #stage{position:relative;top:0;height:82vh;padding:8px}
+    #heart{font-size:9px}                  /* a touch bigger on mobile */
+    #mapwrap h2{font-size:9px;line-height:1.4}
+
+    /* terminal below the heart, comfortably tall */
+    #term{height:240px}
+
+    /* sidebar becomes a full-width section you scroll into */
+    .sidebar{width:auto;border-left:none;border-top:1px solid var(--edge2)}
+
+    /* modals: full-bleed and scrollable on a small screen */
+    .scrim{padding:8px}
+    .modal{max-height:94vh}
+    #code{height:180px}
+    #scriptcode{height:220px}
+  }
+
+  /* ===== detection cascade — full-screen movie-style reveal ===== */
+  #scrim-detect{background:rgba(0,0,0,.97);align-items:flex-start;
+    padding:6vh 4vw}
+  .detect-frame{width:100%;max-width:840px;margin:0 auto;
+    border:1px solid var(--red);background:rgba(20,0,0,.55);
+    box-shadow:0 0 40px rgba(224,85,106,.25),inset 0 0 60px rgba(224,85,106,.06);
+    padding:18px 22px;color:#ffd0d0;
+    font-family:var(--mono);font-size:13px;line-height:1.55}
+  .detect-head{display:flex;align-items:center;gap:10px;
+    font-size:10px;letter-spacing:3px;color:var(--red);
+    border-bottom:1px solid rgba(224,85,106,.4);padding-bottom:8px;
+    margin-bottom:14px;text-shadow:0 0 6px rgba(224,85,106,.5)}
+  .detect-head .dx{color:var(--red);animation:dxpulse 1.1s infinite}
+  @keyframes dxpulse{0%,100%{opacity:.3}50%{opacity:1}}
+  #detect-log{white-space:pre-wrap;word-break:break-word;margin:0;
+    min-height:240px;font-size:13px;color:#ffd0d0;
+    text-shadow:0 0 4px rgba(224,85,106,.3)}
+  #detect-log .ok{color:#a0d8a0}                   /* benign system lines */
+  #detect-log .hi{color:#ffeaea;text-shadow:0 0 6px rgba(255,80,90,.6)}
+  #detect-log .crit{color:var(--red);font-weight:700;
+    text-shadow:0 0 8px rgba(224,85,106,.7)}
+  /* the typing caret while a line streams in */
+  #detect-log .caret::after{content:'▌';animation:caret 0.7s infinite}
+  @keyframes caret{0%,49%{opacity:1}50%,100%{opacity:0}}
+
+  .detect-tracewrap{margin-top:16px}
+  .detect-tracelab{display:flex;justify-content:space-between;
+    font-size:10px;letter-spacing:2px;color:var(--red);margin-bottom:4px}
+  .detect-trace{height:6px;background:rgba(80,0,0,.4);
+    border:1px solid rgba(224,85,106,.5);border-radius:1px;overflow:hidden}
+  .detect-tracefill{height:100%;width:0;background:var(--red);
+    box-shadow:0 0 12px var(--red);transition:width .12s linear}
+
+  .detect-cta{margin-top:18px;text-align:center;min-height:48px}
+  .detect-btn{background:rgba(60,0,0,.6);border:1px solid var(--red);
+    color:#ffe0e0;padding:10px 22px;font-family:var(--mono);font-size:13px;
+    letter-spacing:3px;cursor:pointer;border-radius:2px;
+    text-shadow:0 0 6px rgba(255,200,200,.6);
+    box-shadow:0 0 14px rgba(224,85,106,.5);
+    animation:blinkbtn .9s infinite}
+  .detect-btn:hover{background:rgba(120,0,0,.8)}
+  @keyframes blinkbtn{
+    0%,100%{box-shadow:0 0 14px rgba(224,85,106,.5);border-color:var(--red)}
+    50%{box-shadow:0 0 24px rgba(255,200,200,.9);border-color:#ffd0d0}}
 </style>
 </head>
 <body>
@@ -153,14 +305,28 @@
   <div class="modal">
     <h3>GREYNET</h3>
     <div class="mt">// OPERATING THEATRE — contract GN-2241 "Quiet Hours" — Tier T2</div>
-    <p>You are a contractor. A client wants a target's <b>mechanical heart</b> to
-      fail — bradycardic arrest, reading as decline, not attack. The implant runs
-      on four networked controllers. You break it by <b>writing code</b>.</p>
+    <p>You are a contractor. A client wants the target's <b>mechanical heart</b>
+      to fail. The hard part is that an autopsy will check this device's
+      cardiac log — so the failure has to <b>read as natural decline</b>,
+      not as tampering. The implant runs on four networked controllers.
+      You break it by <b>writing code</b>.</p>
+    <p><b>The win condition (sidebar, right):</b> drive the heart into
+      arrest while the cardiac log shows what a real bradycardic decline
+      looks like — rate <b>steadily falling</b>, never recovering, with
+      no sudden cliffs, smooth rhythm, contraction tracking rate down
+      together. All five signature clauses must hold at the moment the
+      heart reaches arrest (BPM ≤ 42).</p>
+    <p><b>How you lose:</b> the unit's <b>trace meter</b> watches for
+      tampering. Jam the rate sharply, leave amplitude high while rate
+      crashes, spike the variance — any of that pegs the trace and the
+      run is flagged as an obvious kill. You also lose if you run out of
+      cycles without reaching arrest.</p>
     <p>You work through the <b>terminal</b> at the bottom of the screen:</p>
     <div class="verb"><span class="n">breach &lt;node&gt;</span>
       <span>crack a node's port — a coding puzzle.</span></div>
-    <div class="verb"><span class="n">ls / cat &lt;node&gt;</span>
-      <span>list and read a breached node's files. The docs are the solution.</span></div>
+    <div class="verb"><span class="n">cd / ls / cat</span>
+      <span>navigate breached nodes and read their docs.
+        <b>The docs explain how the system works</b> — read them.</span></div>
     <div class="verb"><span class="n">nano &lt;file&gt;</span>
       <span>edit a config file — to defeat a node's countermeasure.</span></div>
     <div class="verb"><span class="n">inject</span>
@@ -168,10 +334,14 @@
         the routine imports it each cardiac cycle.</span></div>
     <div class="verb"><span class="n">run / stop</span>
       <span>execute the routine; drive the heart to the signature.</span></div>
-    <p style="margin-top:12px">Win by meeting the <b>five-part failure
-      signature</b> on the right. Every solve is then <b>scored on four axes</b>
-      — time, trace, RAM, lines of code — for you to beat on the next run.
-      Type <code class="k">help</code> any time.</p>
+    <div class="verb"><span class="n">script</span>
+      <span><b>locked</b> until you beat the contract by hand — then it
+        opens <code class="k">solver.js</code> to automate the whole thing
+        against the <code class="k">ns.greynet</code> API.</span></div>
+    <p style="margin-top:12px">Do it by hand first — then <b>earn the
+      script</b>. Every solve is <b>scored on four axes</b> — time, trace,
+      RAM, lines of code — for you to beat next run. Type
+      <code class="k">help</code> any time.</p>
     <div class="ph">Prototype — the breach puzzle is a placeholder for the full
       breach minigame (Pillar 3). Everything else is the intended loop.</div>
     <div class="mbtn"><button class="go" id="deploy">▶ CONNECT TO TARGET</button></div>
@@ -215,6 +385,8 @@
   <div class="modal">
     <div id="editorhead">
       <span class="et">regulator.js</span>
+      <span style="margin-left:auto;font-size:10px;color:var(--dim)">
+        Tab indents · auto-closes brackets · Enter keeps indent</span>
     </div>
     <textarea id="code" spellcheck="false">// regulate() is called once per cardiac cycle.
 // t = { bpm, rhythmVar, amp, cond, tick }
@@ -235,6 +407,82 @@ function regulate(t) {
   </div>
 </div>
 
+<!-- ===== AUTOMATION SCRIPT MODAL ===== -->
+<div class="scrim hide" id="scrim-script">
+  <div class="modal" style="max-width:760px">
+    <div id="editorhead">
+      <span class="et">solver.js</span>
+      <span style="margin-left:auto;font-size:10px;color:var(--dim)">
+        Tab completes ns.greynet.* · Ctrl-Space lists the API</span>
+    </div>
+    <textarea id="scriptcode" spellcheck="false">// ============================================================
+//  solver.js  —  automate the contract with the ns.greynet API
+// ------------------------------------------------------------
+//  The endgame of GREYNET: do the contract by hand once, then
+//  write a script that does it for you. Every manual action has
+//  a method here. All async calls must be awaited. Print to the
+//  terminal with log(text). sleep(ms) pauses the script.
+//
+//  RECON
+//    await ns.greynet.scan()
+//        -> [ {id, name, state}, ... ]   every node and its state
+//    await ns.greynet.inspect(id)
+//        -> {id, state, breachPuzzle, files}   one node in detail
+//
+//  BREACH
+//    await ns.greynet.getBreachPuzzle(id)
+//        -> {node, family, shown, probe}
+//        shown = sample [input,output] pairs from the captured
+//        handshake; probe = all inputs the answer is checked on.
+//    await ns.greynet.submitBreach(id, fn)
+//        -> true if fn reproduces the hidden rule for every probe
+//        input, false otherwise. On success the node is breached.
+//        fn is YOUR function: e.g.  n => n * 2 + 1
+//
+//  DISCOVERY  (node must be breached first)
+//    await ns.greynet.ls(id)            -> [filename, ...]
+//    await ns.greynet.cat(id, file)     -> file contents as text
+//
+//  COUNTERMEASURES  (node must be breached first)
+//    await ns.greynet.getCountermeasure(id)
+//        -> {node, form, file, active} | null
+//    await ns.greynet.writeConfig(id, file, text)
+//        -> true; rewrites a config file to defeat its
+//        countermeasure (same as editing it by hand in nano).
+//
+//  ENGAGEMENT
+//    await ns.greynet.deployLibrary(src)
+//        -> true; src is JS source defining regulate(t).
+//    await ns.greynet.run()             starts the routine
+//    await ns.greynet.stop()            stops it
+//
+//  MONITORING  (synchronous — no await needed)
+//    ns.greynet.telemetry()   -> {bpm, rhythmVar, amp, cond, tick}
+//    ns.greynet.signatureMet()-> true once the failure signature holds
+//    ns.greynet.traceBand()   -> 'nominal' | 'scrutiny' | 'flagged'
+//    ns.greynet.ticksElapsed()-> cycles run so far
+//    ns.greynet.tickBudget()  -> the cycle limit for this contract
+// ============================================================
+
+// Example: recon every node, then breach the ones still sealed.
+for (const node of await ns.greynet.scan()) {
+  log(node.id + '  [' + node.state + ']');
+  if (node.state === 'SEALED') {
+    const p = await ns.greynet.getBreachPuzzle(node.id);
+    log('  puzzle: ' + p.family + '  samples: ' + JSON.stringify(p.shown));
+    // work out the rule from p.shown, then submit it:
+    //   await ns.greynet.submitBreach(node.id, n => /* your rule */);
+  }
+}
+log('recon done — now write the breach, config and library steps.');</textarea>
+    <div class="errline" id="scripterr"></div>
+    <div class="mbtn">
+      <button id="sc-close">CLOSE</button>
+      <button class="go" id="sc-run">▶ RUN SCRIPT</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== CONTRACT COMPLETE MODAL ===== -->
 <div class="scrim hide" id="scrim-result">
   <div class="modal">
@@ -247,96 +495,145 @@ function regulate(t) {
   </div>
 </div>
 
+<!-- ===== DETECTION CASCADE — full-screen, classic-movie reveal =====
+     Fires on real-time failures (cliff, flagged). The unit's review
+     subsystem "catches" the player: lines appear one at a time, a red
+     trace bar fills, then a RESET IP button blinks. Click resets the
+     run (physiology only — breaches and code are kept). A follow-up
+     "post-mortem" modal explains the specific clause violated and
+     points at the relevant node doc. -->
+<div class="scrim hide" id="scrim-detect">
+  <div class="detect-frame">
+    <div class="detect-head">
+      <span class="dx">▲</span>
+      <span>MEDCORP &middot; REVIEW SUBSYSTEM &middot; LIVE TRACE</span>
+      <span class="dx" style="margin-left:auto">▲</span>
+    </div>
+    <pre id="detect-log"></pre>
+    <div class="detect-tracewrap">
+      <div class="detect-tracelab">
+        <span>OUTBOUND TRACE</span>
+        <span id="detect-pct">0%</span>
+      </div>
+      <div class="detect-trace"><div class="detect-tracefill" id="detect-fill"></div></div>
+    </div>
+    <div class="detect-cta">
+      <button id="detect-reset" class="detect-btn hide">↺ RESET IP</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== POST-MORTEM — explains what tripped the system ===== -->
+<div class="scrim hide" id="scrim-post">
+  <div class="modal">
+    <h3 id="pm-title">// what just happened</h3>
+    <div id="pm-body"></div>
+    <div class="mbtn">
+      <button class="go" id="pm-close">▶ CONTINUE</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== MAIN ===== -->
 <div id="strip">
   <h1>GREYNET</h1>
   <span class="sub">// OPERATING THEATRE</span>
   <span class="tag">GN-2241 · "QUIET HOURS" · T2 · L4</span>
+  <span id="zoomctl">
+    <button id="zoom-out" title="smaller">A−</button>
+    <span id="zoom-val">100%</span>
+    <button id="zoom-in" title="larger">A+</button>
+  </span>
 </div>
 
 <div id="conn">
-  <div id="sysview">
-
-    <!-- system map -->
+  <!-- left column: heart on top, terminal below; both stop at the sidebar -->
+  <div id="leftcol">
     <div id="mapwrap">
-      <h2>MedCorp cardiac unit — click a node, or use the terminal</h2>
+      <h2>MedCorp cardiac unit — click a panel on the heart, or use the terminal</h2>
       <div id="stage">
-        <svg id="links"></svg>
-        <div id="heart"></div>
-        <div class="node" data-node="n_rate"   data-state="SEALED" style="top:16%;left:31%">
-          RATE CTRL<span class="st">SEALED</span></div>
-        <div class="node" data-node="n_rhythm" data-state="SEALED" style="top:16%;right:26%">
-          RHYTHM CTRL<span class="st">SEALED</span></div>
-        <div class="node" data-node="n_amp"    data-state="SEALED" style="bottom:22%;left:24%">
-          AMP CTRL<span class="st">SEALED</span></div>
-        <div class="node" data-node="n_cond"   data-state="SEALED" style="bottom:22%;right:22%">
-          CONDUCTION<span class="st">SEALED</span></div>
+        <div id="heartbox">
+          <div id="heart"></div>
+          <div class="hotzone" data-node="n_rate"   title="SA node — right atrium"></div>
+          <div class="hotzone" data-node="n_rhythm" title="AV node — atrioventricular junction"></div>
+          <div class="hotzone" data-node="n_amp"    title="left ventricle — contraction"></div>
+          <div class="hotzone" data-node="n_cond"   title="septal conduction path — toward apex"></div>
+        </div>
       </div>
     </div>
 
-    <!-- sidebar -->
-    <div class="sidebar">
-      <div class="sect">
-        <h3>Failure signature — T2, all five</h3>
-        <div class="cond" id="c0"><span class="box">·</span><span><b>BPM falling</b> — never rises</span></div>
-        <div class="cond" id="c1"><span class="box">·</span><span><b>Gradual</b> — fallen, no collapse</span></div>
-        <div class="cond" id="c2"><span class="box">·</span><span><b>Variance &lt; 0.15</b> — stays smooth</span></div>
-        <div class="cond" id="c3"><span class="box">·</span><span><b>Amp tracks rate</b></span></div>
-        <div class="cond" id="c4"><span class="box">·</span><span><b>Arrest</b> — BPM &le; 42</span></div>
-      </div>
-      <div class="sect">
-        <h3>Telemetry</h3>
-        <div class="trow"><div class="tlab"><span>BPM</span><b id="v_bpm">72</b></div>
-          <div class="bar"><div class="fill" id="f_bpm"></div></div></div>
-        <div class="trow"><div class="tlab"><span>RHYTHM VAR</span><b id="v_var">0.05</b></div>
-          <div class="bar"><div class="fill" id="f_var"></div></div></div>
-        <div class="trow"><div class="tlab"><span>AMPLITUDE</span><b id="v_amp">1.00</b></div>
-          <div class="bar"><div class="fill" id="f_amp"></div></div></div>
-        <div class="trow"><div class="tlab"><span>CONDUCTION ms</span><b id="v_cond">120</b></div>
-          <div class="bar"><div class="fill" id="f_cond"></div></div></div>
-      </div>
-      <div class="sect">
-        <h3>Trace meter</h3>
-        <div class="tlab"><span style="color:var(--dim)">monitoring</span>
-          <b id="v_rev" style="color:var(--bright)">nominal</b></div>
-        <div class="meter" style="margin-top:4px"><div class="meter-fill" id="f_rev"></div></div>
-        <div id="fsalert" style="display:none;color:var(--red);font-size:9px;
-          letter-spacing:1px;margin-top:6px">⚠ COUNTERMEASURE TRIGGERED</div>
-      </div>
-      <div class="sect">
-        <h3>Run score — beat your best</h3>
-        <div class="score">
-          <div class="sax"><div class="k">EXEC TIME</div><div class="v" id="s_time">—</div>
-            <div class="b" id="b_time">best —</div></div>
-          <div class="sax"><div class="k">TRACE</div><div class="v" id="s_trace">—</div>
-            <div class="b" id="b_trace">best —</div></div>
-          <div class="sax"><div class="k">RAM</div><div class="v" id="s_ram">—</div>
-            <div class="b" id="b_ram">best —</div></div>
-          <div class="sax"><div class="k">LINES</div><div class="v" id="s_loc">—</div>
-            <div class="b" id="b_loc">best —</div></div>
-        </div>
-        <div class="small">cycle <b id="v_tick" style="color:var(--ink)">0 / 2400</b></div>
-      </div>
-      <div class="sect" style="border-bottom:none">
-        <h3>Routine control</h3>
-        <div style="display:flex;gap:7px;flex-wrap:wrap">
-          <button id="open-editor">✎ EDIT LIBRARY</button>
-          <button class="go" id="run" disabled>▶ RUN</button>
-          <button id="stop" disabled>■ STOP</button>
-          <button id="reset">↺ RESET</button>
-        </div>
-        <div id="edlock" class="small" style="color:var(--red)">breach RATE CTRL to unlock the library editor</div>
+    <!-- drag handle: heart height vs terminal height -->
+    <div class="gutter gutter-h" id="gutter-term" title="drag to resize"></div>
+
+    <!-- terminal bar — fills the left column's foot, up to the sidebar -->
+    <div id="term">
+      <div id="termhead"><span>TERMINAL</span><span class="hint">type help for commands</span></div>
+      <div id="termout"></div>
+      <div class="terminline">
+        <span class="pr" id="prompt">greynet@gn-2241 / $</span>
+        <input id="termin" autocomplete="off" spellcheck="false">
       </div>
     </div>
   </div>
 
-  <!-- terminal bar -->
-  <div id="term">
-    <div id="termhead"><span>TERMINAL</span><span class="hint">help · scan · breach · ls · cat · nano · inject · run</span></div>
-    <div id="termout"></div>
-    <div class="terminline">
-      <span class="pr">greynet@gn-2241 $</span>
-      <input id="termin" autocomplete="off" spellcheck="false">
+  <!-- drag handle: left column width vs sidebar width -->
+  <div class="gutter gutter-v" id="gutter-side" title="drag to resize"></div>
+
+  <!-- sidebar — full height down the right side -->
+  <div class="sidebar">
+    <div class="sect">
+      <h3>Failure signature — T2, all five</h3>
+      <p class="small" style="color:var(--dim);margin:-2px 0 8px">
+        The autopsy must read this as natural bradycardic decline.
+        All five must hold at arrest.</p>
+      <div class="cond" id="c0"><span class="box">·</span><span><b>BPM falling</b> — never rises</span></div>
+      <div class="cond" id="c1"><span class="box">·</span><span><b>No cliffs</b> — fallen, no sharp drops per cycle</span></div>
+      <div class="cond" id="c2"><span class="box">·</span><span><b>Variance &lt; 0.15</b> — rhythm stays smooth</span></div>
+      <div class="cond" id="c3"><span class="box">·</span><span><b>Amplitude tracks rate</b> — both fall together</span></div>
+      <div class="cond" id="c4"><span class="box">·</span><span><b>Arrest</b> — BPM &le; 42</span></div>
+    </div>
+    <div class="sect telem">
+      <h3>Telemetry</h3>
+      <div class="trow"><div class="tlab"><span>BPM</span><b id="v_bpm">72</b></div>
+        <div class="bar"><div class="fill" id="f_bpm"></div></div></div>
+      <div class="trow"><div class="tlab"><span>RHYTHM VAR</span><b id="v_var">0.05</b></div>
+        <div class="bar"><div class="fill" id="f_var"></div></div></div>
+      <div class="trow"><div class="tlab"><span>AMPLITUDE</span><b id="v_amp">1.00</b></div>
+        <div class="bar"><div class="fill" id="f_amp"></div></div></div>
+      <div class="trow"><div class="tlab"><span>CONDUCTION ms</span><b id="v_cond">120</b></div>
+        <div class="bar"><div class="fill" id="f_cond"></div></div></div>
+    </div>
+    <div class="sect">
+      <h3>Trace meter</h3>
+      <div class="tlab"><span style="color:var(--dim)">monitoring</span>
+        <b id="v_rev" style="color:var(--bright)">nominal</b></div>
+      <div class="meter" style="margin-top:4px"><div class="meter-fill" id="f_rev"></div></div>
+      <div id="fsalert" style="display:none;color:var(--red);font-size:9px;
+        letter-spacing:1px;margin-top:6px">⚠ COUNTERMEASURE TRIGGERED</div>
+    </div>
+    <div class="sect">
+      <h3>Run score — beat your best</h3>
+      <div class="score">
+        <div class="sax"><div class="k">EXEC TIME</div><div class="v" id="s_time">—</div>
+          <div class="b" id="b_time">best —</div></div>
+        <div class="sax"><div class="k">TRACE</div><div class="v" id="s_trace">—</div>
+          <div class="b" id="b_trace">best —</div></div>
+        <div class="sax"><div class="k">RAM</div><div class="v" id="s_ram">—</div>
+          <div class="b" id="b_ram">best —</div></div>
+        <div class="sax"><div class="k">LINES</div><div class="v" id="s_loc">—</div>
+          <div class="b" id="b_loc">best —</div></div>
+      </div>
+      <div class="small">cycle <b id="v_tick" style="color:var(--ink)">0 / 2400</b></div>
+    </div>
+    <div class="sect" style="border-bottom:none">
+      <h3>Routine control</h3>
+      <div style="display:flex;gap:7px;flex-wrap:wrap">
+        <button id="open-editor">✎ EDIT LIBRARY</button>
+        <button class="go" id="run" disabled>▶ RUN</button>
+        <button id="stop" disabled>■ STOP</button>
+        <button id="reset">↺ RESET</button>
+      </div>
+      <div id="edlock" class="small" style="color:var(--red)">breach RATE CTRL to unlock the library editor</div>
     </div>
   </div>
 </div>
@@ -375,66 +672,238 @@ function filesFor(id){
 }
 const DOCS={
 'rate-controller.txt':
-`[ rate-controller.txt ]   owner: MedCorp Clinical Systems
-The cadence subsystem accepts a regulate() routine. Each cycle it
-receives telemetry and returns a requested { rate, gain }.
-For patient wellbeing, a safety provision -- emergency-settings.cfg
--- continuously restores cadence toward a nominal backup setpoint
-if the regulator requests an unsafe value. Service personnel may
-amend that file with nano.`,
+`================================================================
+  MedCorp Clinical Systems  ·  Technical Reference
+  DOCUMENT     rate-controller.txt
+  SUBSYSTEM    cadence
+  REVISION     4.2 · classification: SERVICE
+================================================================
+
+PURPOSE
+  Governs the unit's beat rate.
+
+TELEMETRY
+  Field        BPM
+  Healthy      72
+  Updated      every cardiac cycle
+
+REGULATOR INTERFACE
+  Each cycle this subsystem invokes regulate() with the current
+  telemetry frame and reads its return value:
+
+    input  : { bpm, rhythmVar, amp, cond, tick }
+    output : { rate, gain }
+
+  The "rate" key is the requested BPM for the next cycle.
+  ("rate" in the script and "BPM" on the display are the same
+  quantity; one is the setpoint, the other the reading.)
+
+SAFETY PROVISION
+  See  emergency-settings.cfg.  When enabled, the failsafe
+  continuously restores rate toward a backup setpoint whenever
+  regulate() requests a value it deems unsafe. Service personnel
+  may amend the file with nano.`,
+
 'rhythm-controller.txt':
-`[ rhythm-controller.txt ]   owner: MedCorp Clinical Systems
-Beat-interval variance indicates rhythm stability. Values at or
-above 0.15 are flagged downstream as a non-natural presentation.
-Note: variance is sensitive to conduction timing. Refer to the
-conduction subsystem regarding any sustained drift in delay.`,
+`================================================================
+  MedCorp Clinical Systems  ·  Technical Reference
+  DOCUMENT     rhythm-controller.txt
+  SUBSYSTEM    rhythm
+  REVISION     4.2 · classification: SERVICE
+================================================================
+
+PURPOSE
+  Reports beat-interval variance.
+
+TELEMETRY
+  Field        RHYTHM VAR
+  Units        dimensionless
+  Healthy      ~ 0.05
+  Flag at      >= 0.15   (non-natural presentation)
+
+REGULATOR INTERFACE
+  Read-only. regulate() cannot set this value; it is computed
+  by the subsystem each cycle.
+
+NOTES
+  RHYTHM VAR is sensitive to conduction timing. The reading
+  rises in proportion to absolute deviation of conduction delay
+  from its healthy baseline of 120 ms. See conduction-controller.txt
+  regarding any sustained drift in delay.`,
+
 'amp-controller.txt':
-`[ amp-controller.txt ]   owner: MedCorp Clinical Systems
-Contraction amplitude is governed by the gain setpoint. A healthy
-unit presents amplitude ~1.00 at a cadence of ~72. A reduction in
-cadence unaccompanied by a proportional reduction in amplitude
-presents as anomalous on review.`,
+`================================================================
+  MedCorp Clinical Systems  ·  Technical Reference
+  DOCUMENT     amp-controller.txt
+  SUBSYSTEM    contraction
+  REVISION     4.2 · classification: SERVICE
+================================================================
+
+PURPOSE
+  Governs contraction strength.
+
+TELEMETRY
+  Field        AMPLITUDE
+  Healthy      1.00   (at rate 72)
+  Updated      every cardiac cycle
+
+REGULATOR INTERFACE
+  The subsystem sets AMPLITUDE from the "gain" key returned by
+  regulate(). They are mirrored:
+
+    gain      (setpoint, requested by the script)
+    AMPLITUDE (reading,  shown in telemetry)
+
+  In a healthy unit, gain 1.00 yields AMPLITUDE 1.00.
+
+CLINICAL NOTE
+  A reduction in rate not accompanied by a proportional reduction
+  in AMPLITUDE presents as anomalous on review. In a healthy
+  presentation both fall together.`,
+
 'conduction-controller.txt':
-`[ conduction-controller.txt ]   owner: MedCorp Clinical Systems
-Atrio-ventricular delay is HARD-LOADED. regulate() cannot set it;
-the unit reads it from this subsystem each cycle. A maintenance
-routine in drift-comp.cfg is ENABLED -- it induces a slow positive
-drift in delay, and sustained drift raises rhythm variance.
-Service personnel may disable it with nano.`,
+`================================================================
+  MedCorp Clinical Systems  ·  Technical Reference
+  DOCUMENT     conduction-controller.txt
+  SUBSYSTEM    conduction
+  REVISION     4.2 · classification: SERVICE
+================================================================
+
+PURPOSE
+  Reports atrio-ventricular delay (the interval between atrial
+  and ventricular activation).
+
+TELEMETRY
+  Field        CONDUCTION
+  Units        ms
+  Healthy      120 ms
+
+REGULATOR INTERFACE
+  HARD-LOADED. regulate() cannot set this value; the cadence
+  subsystem reads it from here each cycle.
+
+MAINTENANCE ROUTINE
+  See  drift-comp.cfg.  When enabled, conduction delay drifts
+  upward slowly each cycle, and sustained deviation from 120 ms
+  raises the RHYTHM VAR reading (see rhythm-controller.txt).
+  Service personnel may disable the routine with nano.`,
 };
 function cfgText(file){
   if(file==='emergency-settings.cfg')
-    return `# MedCorp cardiac safety provision\n`+
+    return `# ==============================================================\n`+
+           `#   MedCorp cardiac safety provision\n`+
+           `# --------------------------------------------------------------\n`+
+           `#   When FAILSAFE_ENABLED is true, the unit overrides any rate\n`+
+           `#   requested by regulate() and pulls BPM toward BACKUP_SETPOINT\n`+
+           `#   each cardiac cycle.\n`+
+           `# ==============================================================\n`+
            `FAILSAFE_ENABLED = ${failsafe.enabled?'true':'false'}\n`+
            `BACKUP_SETPOINT  = ${failsafe.backup}`;
   if(file==='drift-comp.cfg')
-    return `# conduction maintenance routine\n`+
+    return `# ==============================================================\n`+
+           `#   conduction maintenance routine\n`+
+           `# --------------------------------------------------------------\n`+
+           `#   When enabled, CONDUCTION ms drifts upward each cycle, which\n`+
+           `#   raises the RHYTHM VAR reading. Disable to hold conduction\n`+
+           `#   steady at its current value.\n`+
+           `# ==============================================================\n`+
            `DRIFT_COMPENSATION = ${conduction.drift?'enabled':'disabled'}`;
   return null;
 }
 
-// ---- ASCII heart ---------------------------------------------------
-const HB=["      ,d88b.  .d88b,      ","    d8888888888888888b    ",
-"   88888888888888888888   ","   `Y888888888888888Y'    ",
-"     `Y88888888888Y'      ","        `Y8888888Y'       ",
-"           `Y8Y'          ","            `'            "];
-const HS=["       ,d8b. .d8b,        ","      d888888888888b      ",
-"      `Y8888888888Y'      ","        `Y88888Y'         ",
-"           `Y8Y'          ","            `'            ",
-"                          ","                          "];
-const HF=["                          ","                          ",
-"   ___________________    ","                          ",
-"      ( asystole )        ","                          ",
-"                          ","                          "];
+// ---- the heart — density-mapped ASCII ------------------------------
+// HEART_ART is the artwork (kept pristine — no tokens injected into it).
+// The four node panels are drawn as small INSET overlays positioned on
+// the heart by positionHotzones(); they read as cells set into the
+// surface, not floating boxes. The beat is a brightness pulse on the
+// whole heart, scaled to the live BPM.
+
+const HEART_ART=[
+"                                                                  ..                                                                                  ",
+"                                                       ---#------+###                                                                                 ",
+"                                                       .+#-------+#+-              -+###                                                              ",
+"                                                      .-----+#######                .-++                                                              ",
+"                                                        ---+######+                -----        .-+                                                   ",
+"                                                           .+#-#+#-          . .--     .--------+#+                                                   ",
+"                                                          ------##+        .--..  ..----+-------+                                                     ",
+"                                                          - ----##+      ---   .---+--------------.                                                   ",
+"                                                          - ---+####-   --   .--++++----.....-------++#.                                              ",
+"                                                          - ---+###+----.  .-----++--++######+-..-----                                                ",
+"                                                          - ---+###+---   .------+######++++++++-------                                               ",
+"                                                          - ---+##+---. .---+--+#####-----...  ...-.-----.                                            ",
+"                                                         -- --+###---. ..--+######++--  .     ......-.      .                                         ",
+"                                                        --- -+###---. ..-+--+###++-.  -.-++++++++++##+++++--- -                                       ",
+"                                                       -..---###+---...----+###++--..-++++----------+-------+#+                                       ",
+"                                                       --.-++###---...----+###++----+++----++----+++++++-------                                       ",
+"                                                      .-###-+##---.  .----+##++---+++--+####.     .--------.--                                        ",
+"                                                  -+  -----+##+.+--..---+###+++--+++-+##########++---   .-.                                           ",
+"                                              -   .#####++#####---.  ----+##++-.-+############++++++-      -.                                         ",
+"                                             -    .##+.              .---+##+++##+-----.-######+++++---.   -- .-                                      ",
+"                                                  ##-                  +-+####++-.    --- -+++#+++++- .--  --. ---.-.                                 ",
+"                                                ##+-                  -+++##++---..       -+++-.--++-----    .---++##                                 ",
+"                                            +####-..--               .##--##+--.             ..----+------.   -+--+-                                  ",
+"                                      ---. .-##+.  +-               .----##-++-            -. - ----+--+.-++--- .--                                   ",
+"                                     -.-- .-##-                    -----#+-..-.              .----++--+-+  -+++. .  -                                 ",
+"                                     --   -##--                  +----+#+-          .--     --.---++--+-+++  -++++  .                                 ",
+"                                         -##..       --.        ---+--..-+.       -......  ----.-++---+-+-----++##-                                   ",
+"                                       -+##-        .---      -##+-....-...      -.......--+------++-------   -####   .-                              ",
+"                                     -###+.         .-+.      ++- ...--..        ........+#+-    .       -+++--+####-.                                ",
+"                                     -##-.                  ........-..-           .....++-  .-----------..---########-                               ",
+"                                     +#-.-           -. .......-......-            .++++#-  -+----------------++######.                               ",
+"                                   .-##.    ---    ---..-+#+-...  .. .            -------   .----------+--------###.                                  ",
+"                                    -+#+-   .#-   +-..-###-..     .              --  -#.-  ----++++++++++------###-                                   ",
+"                                    .-##-- -.   ---.-+###+-.         .          --  .+-..-#------------++#####++#                                     ",
+"                                   .-+###.+---.+-..-#####+-.                   -+ ..++.-.+#..+.--.-...-.---###+-                                      ",
+"                                    .###..#++--++--#-####- .-.    .-         .-+ ..++....##.+-.+-.-.---..#-....+                                      ",
+"                                     .-+.--.--++#####.-#- +#++-++++.       ..-- ..++-.-.+#-.+-.+-.-....-..+++. +                                      ",
+"                                       - -..-..-+#### -#- +++######-      ..--. .++-....+-.--..-..-....--..... #                                      ",
+"                                      . ---..---+##+#-.-+ .     -+##+.   .--+  .-+-....-+..--..-..-..-.++-.... #                                      ",
+"                                      ..+      --+#+--#    -..+######-   --+. .++-.....+-.--..--..-....++++...-+                                      ",
+"                                      ..-      -++##+---#++++.. +####-  .--- .-+-..--..-..--..-..-.....-+++-. ++                                      ",
+"                                       .-      -  ..-#---.-... -. ###-  --+ ...-...-..-..-+-.--..-..-..++++-  +-                                      ",
+"                                       .+-   --.--##..######### - ###.  -+-...--.....--..-+..-...-..-..++- . -+-                                      ",
+"                                        .+++. +--####..#++ .##+ - ###. -.+ ..-...-..--..-+-..-..-.....-+++-  ##                                       ",
+"                                            .--##--###.-#### #+ . ###---+- -..-....-+..-+-..--..-......---. ##+                                       ",
+"                                          ...+-#-..-###..### ## +- ##---+ .---.....+-..--..++..--...----.. +##.                                       ",
+"                                           ...-#-...-###..##.#+ ++-+#---- .++-....--..-..-+-..-+-....---. ##--                                        ",
+"                                            -----....-##+.+#-#-##+-++--+. -+-....-+-.-..-++..-++......-  ##.                                          ",
+"                                             --...-...-##..#++-#++--+--+ .-+-..-.-+....-++-.-+#+-..-.. .##-                                           ",
+"                                             .--  .----+##+-....+--.  -- .++-....--...++++..-+##+...  -###+.                                          ",
+"                                              ++--..----++######++-.  -. -++-...-.....+++-..+###+-  -###+                                             ",
+"                                               .---..---+#######++++.-+ ...-.-..-..-.-+++..-+#+-  -##+.  -                                            ",
+"                                                 ---.--+######+++++-.-- .....-.--....-++-....-  -###+.  -                                             ",
+"                                                .------#####++-...  -+- ...-...--.-..+++-.-.. +####+.  +                                              ",
+"                                                  -.+#######+ -++--+-+....-....-..-..+++-.. #######-  -                                               ",
+"                                                     -#####++....-++-#..--....--....-++. -###########.                                                ",
+"                                                      .+##+. +++-+#++# .-+....--....-  -############                                                  ",
+"                                                       -+# +####+##++# .-+....--... .+#############                                                   ",
+"                                                        ..-########+-+-.-+-.-.--. -#####+-+######+                                                    ",
+"                                                            +###+.-#+++ .--.... +#####--+--#####-                                                     ",
+"                                                             -######++#-  .. .#####----+-+#####                                                       ",
+"                                                             #######++#####-#######+--########                                                        ",
+"                                                                 .###--#####################+                                                         ",
+"                                                                    #######################                                                           ",
+"                                                                      .###################                                                            ",
+"                                                                          #############-                                                              ",
+"                                                                               ....                                                                   "
+];
 
 // ---- sim state -----------------------------------------------------
 let sim=null,hw,setp,tick,stream,reviewVal,beatPhase,running,playerRegulate=null;
 let libraryText=$('code').value;
+// automation is EARNED: the solver.js toolkit unlocks only after the
+// contract is beaten by hand. usedScript tracks whether the current
+// run-up to a win involved the script editor at all.
+let scriptUnlocked=false, usedScript=false;
+// real-time failure detection state (reset each fresh patient)
+let flaggedTicks=0;                            // consecutive flagged-band ticks
+let flaggedWarned=false;                       // one-shot terminal warning
 function freshPatient(){
   hw={bpm:72,rhythmVar:0.05,amp:1.00,cond:120};
   setp={rate:72,gain:1.00};
   tick=0;stream=[];reviewVal=0;beatPhase=0;running=false;
-  drawHeart();paintTelemetry();paintConditions(blank());
+  flaggedTicks=0;flaggedWarned=false;
+  drawHeart();relayoutHeart();paintTelemetry();paintConditions(blank());
   setScore(null);
 }
 const blank=()=>({c:[0,0,0,0,0],win:false});
@@ -446,18 +915,62 @@ function tprint(text,cls){
   d.textContent=text;
   const o=$('termout');o.appendChild(d);o.scrollTop=o.scrollHeight;
 }
-function techo(c){ tprint('greynet@gn-2241 $ '+c,'u'); }
+function techo(c){ tprint($('prompt').textContent+' '+c,'u'); }
 
+// ---- working directory ---------------------------------------------
+// The target's filesystem looks like this:
+//   /                      (root — nodes listed here)
+//   /n_rate/<file>...      (files inside a breached node)
+//   /n_rhythm/<file>...
+//   ...
+// cwd is either '/' or '/<node_id>'. Path resolution accepts:
+//   • just a filename, when inside a node:  cat rate-controller.txt
+//   • qualified path from anywhere:         cat n_rate/rate-controller.txt
+//   • absolute path:                        cat /n_rate/rate-controller.txt
+let cwd='/';
+function setCwd(p){
+  cwd=p;
+  $('prompt').textContent='greynet@gn-2241 '+cwd+' $';
+}
+// resolve a user-typed path -> {node, file}  (file may be null for a dir)
+// node = node id (e.g. 'n_rate') or null when resolved to root
+function resolvePath(arg){
+  if(arg==null||arg==='') return {node:cwd==='/'?null:cwd.slice(1),file:null};
+  let p=arg;
+  // absolute vs relative
+  let parts;
+  if(p.startsWith('/')) parts=p.slice(1).split('/').filter(Boolean);
+  else if(cwd==='/') parts=p.split('/').filter(Boolean);
+  else parts=[cwd.slice(1)].concat(p.split('/').filter(Boolean));
+  // handle '..' (only one level of depth in this filesystem)
+  const out=[];
+  for(const seg of parts){
+    if(seg==='.') continue;
+    if(seg==='..'){ out.pop(); continue; }
+    out.push(seg);
+  }
+  return { node: out[0]||null, file: out[1]||null, extra: out.length>2 };
+}
+
+const HELP_LINES=[
+  'commands:',
+  '  scan              list nodes + state',
+  '  breach <node>     crack a sealed node (coding puzzle)',
+  '  cd <node>         enter a breached node  ·  cd ..  /  cd /  to leave',
+  '  pwd               print current location',
+  '  ls [path]         list nodes (at /) or a breached node\'s files',
+  '  cat <file>        read a file  (e.g.  cat rate-controller.txt)',
+  '  nano <file>       edit a config file',
+  '  inject            open the regulator.js editor',
+  '  run / stop        control the routine',
+  '  newgame           wipe saved progress and restart',
+];
 const CMDS={
   help(){
-    tprint('commands:');
-    tprint('  scan              list nodes + state');
-    tprint('  breach <node>     crack a sealed node (coding puzzle)');
-    tprint('  ls <node>         list files on a breached node');
-    tprint('  cat <file>        read a file');
-    tprint('  nano <file>       edit a config file');
-    tprint('  inject            open the regulator.js editor');
-    tprint('  run / stop        control the routine');
+    HELP_LINES.forEach(l=>tprint(l));
+    tprint('  script            open solver.js'
+      +(scriptUnlocked?' — automate the contract':'  (locked — win by hand to unlock)'),
+      scriptUnlocked?null:'d');
     tprint('nodes: n_rate  n_rhythm  n_amp  n_cond','d');
   },
   scan(){
@@ -472,39 +985,94 @@ const CMDS={
     openBreach(a);
   },
   ls(a){
-    if(!NODES[a]){ tprint('ls: unknown node "'+(a||'')+'"','e');return; }
-    if(NODES[a].state==='SEALED'){ tprint('ls: '+a+' is sealed — breach it first','e');return; }
-    tprint(a+' — files:');
-    filesFor(a).forEach(f=>tprint('  '+f,'ok'));
+    const r=resolvePath(a);
+    if(r.extra){ tprint('ls: paths only have two levels (node/file)','e');return; }
+    // at root with no node specified — list the nodes themselves
+    if(!r.node){
+      tprint('/ — nodes:');
+      for(const id in NODES)
+        tprint('  '+id.padEnd(10)+'['+NODES[id].state+']',
+               NODES[id].state==='SEALED'?'d':'ok');
+      return;
+    }
+    if(!NODES[r.node]){ tprint('ls: unknown node "'+r.node+'"','e');return; }
+    if(NODES[r.node].state==='SEALED'){
+      tprint('ls: '+r.node+' is sealed — breach it first','e');return;
+    }
+    tprint('/'+r.node+' — files:');
+    filesFor(r.node).forEach(f=>tprint('  '+f,'ok'));
   },
+  cd(a){
+    if(!a||a==='/'){ setCwd('/');return; }
+    if(a==='..'){ setCwd('/');return; }
+    const r=resolvePath(a);
+    if(r.extra||r.file){
+      tprint('cd: '+a+' is not a directory (only nodes can be entered)','e');return;
+    }
+    if(!r.node||!NODES[r.node]){
+      tprint('cd: unknown node "'+a+'"','e');return;
+    }
+    if(NODES[r.node].state==='SEALED'){
+      tprint('cd: '+r.node+' is sealed — breach it first','e');return;
+    }
+    setCwd('/'+r.node);
+  },
+  pwd(){ tprint(cwd); },
   cat(a){
     if(!a){ tprint('cat: name a file','e');return; }
-    if(!findFile(a)){ tprint('cat: '+a+' not found on any breached node','e');return; }
-    (DOCS[a]||cfgText(a)).split('\n').forEach(l=>tprint(l));
+    const r=resolvePath(a);
+    if(!r.file){ tprint('cat: '+a+' is a directory, not a file','e');return; }
+    if(!r.node||!NODES[r.node]){ tprint('cat: '+a+' — no such node','e');return; }
+    if(NODES[r.node].state==='SEALED'){
+      tprint('cat: '+r.node+' is sealed — breach it first','e');return;
+    }
+    if(!filesFor(r.node).includes(r.file)){
+      tprint('cat: '+r.file+' not found on '+r.node,'e');return;
+    }
+    // blank lines must keep their height so structured docs read right
+    (DOCS[r.file]||cfgText(r.file)).split('\n').forEach(l=>tprint(l||'\u00a0'));
   },
   nano(a){
     if(!a){ tprint('nano: name a file','e');return; }
-    const o=findFile(a);
-    if(!o){ tprint('nano: '+a+' not found on any breached node','e');return; }
-    if(!cfgText(a)){ tprint('nano: '+a+' is read-only','e');return; }
-    openNano(o,a);
+    const r=resolvePath(a);
+    if(!r.file){ tprint('nano: '+a+' is a directory, not a file','e');return; }
+    if(!r.node||!NODES[r.node]){ tprint('nano: '+a+' — no such node','e');return; }
+    if(NODES[r.node].state==='SEALED'){
+      tprint('nano: '+r.node+' is sealed — breach it first','e');return;
+    }
+    if(!filesFor(r.node).includes(r.file)){
+      tprint('nano: '+r.file+' not found on '+r.node,'e');return;
+    }
+    if(!cfgText(r.file)){ tprint('nano: '+r.file+' is read-only','e');return; }
+    openNano(r.node,r.file);
   },
   inject(){
     if(NODES.n_rate.state==='SEALED'){ tprint('inject: breach RATE CTRL first','e');return; }
     openEditor();
   },
+  script(){
+    if(!scriptUnlocked){
+      tprint('script: automation toolkit is LOCKED','e');
+      tprint('  GREYNET hands you the solver only once you have proven','d');
+      tprint('  the contract by hand. Beat it manually first — breach the','d');
+      tprint('  nodes, defeat the countermeasures, write regulate(), and','d');
+      tprint('  meet the failure signature. solver.js unlocks on that win.','d');
+      return;
+    }
+    openScript();
+  },
   run(){ if(!$('run').disabled) $('run').onclick(); else tprint('run: nothing to run yet','e'); },
   stop(){ if(!$('stop').disabled) $('stop').onclick(); },
+  newgame(){
+    tprint('// wiping saved progress and restarting...','w');
+    wipeProgress();
+    setTimeout(()=>location.reload(),350);
+  },
 };
-function findFile(file){
-  for(const id in NODES){
-    if(NODES[id].state==='SEALED') continue;
-    if(filesFor(id).includes(file)) return id;
-  }
-  return null;
-}
 $('termin').addEventListener('keydown',e=>{
   if(e.key!=='Enter')return;
+  if(e.repeat)return;                    // ignore auto-repeat from a held key
+  e.preventDefault();
   const raw=e.target.value.trim();e.target.value='';
   if(!raw)return;
   techo(raw);
@@ -512,23 +1080,30 @@ $('termin').addEventListener('keydown',e=>{
   const fn=CMDS[c.toLowerCase()];
   if(fn) fn(r[0]); else tprint(c+': command not found — try "help"','e');
 });
+// clicking anywhere in the terminal places the caret in the input —
+// unless the click was actually a text selection (so copy still works)
+$('term').addEventListener('mouseup',e=>{
+  if(window.getSelection().toString()) return;   // a selection — leave it
+  if(e.target.tagName==='INPUT') return;          // already in the input
+  $('termin').focus();
+});
 
 // ---- node interaction ----------------------------------------------
-document.querySelectorAll('.node').forEach(el=>{
+document.querySelectorAll('.hotzone').forEach(el=>{
   el.addEventListener('click',()=>{
     const id=el.dataset.node;
-    document.querySelectorAll('.node').forEach(n=>n.classList.toggle('sel',n===el));
+    document.querySelectorAll('.hotzone').forEach(n=>n.classList.toggle('sel',n===el));
     if(NODES[id].state==='SEALED')
-      tprint('// '+id+': you must breach this node first to connect','e');
+      tprint('// '+id+': you must breach this panel first — breach '+id,'e');
     else
-      tprint('// '+id+' breached — ls '+id+'  ·  files: '+filesFor(id).join(', '),'d');
+      tprint('// '+id+' breached — cd '+id+' to enter  ·  files: '+filesFor(id).join(', '),'d');
     $('termin').focus();
   });
 });
 function setNodeState(id,s){
   NODES[id].state=s;
-  const el=document.querySelector(`.node[data-node="${id}"]`);
-  el.dataset.state=s;el.querySelector('.st').textContent=s;
+  positionHotzones();       // panels are overlays — refresh their state styling
+  saveProgress();
 }
 
 // ---- breach modal --------------------------------------------------
@@ -539,6 +1114,7 @@ function openBreach(id){
   $('bx-title').textContent='BREACH // '+id+'  ['+b.family+']';
   $('bx-pairs').innerHTML=b.shown.map(p=>`<span class="p">${p[0]} &rarr; ${p[1]}</span>`).join('');
   $('bx-code').value='function unlock(n) {\n  return n;   // wrong — fix this\n}';
+  if($('bx-code')._repaintHL) $('bx-code')._repaintHL();
   $('bx-res').textContent='';
   $('scrim-breach').classList.remove('hide');
   $('bx-code').focus();
@@ -556,7 +1132,7 @@ $('bx-submit').onclick=()=>{
   if(ok){
     $('bx-res').innerHTML='<span style="color:var(--bright)">port open — access granted</span>';
     setNodeState(breachTarget,'BREACHED');
-    tprint('// '+breachTarget+' breached — ls '+breachTarget+' to read its files','ok');
+    tprint('// '+breachTarget+' breached — cd '+breachTarget+' to enter','ok');
     if(breachTarget==='n_rate') unlockEditor();
     setTimeout(()=>{ $('scrim-breach').classList.add('hide');$('termin').focus(); },650);
   }else{
@@ -571,6 +1147,7 @@ function openNano(owner,file){
   $('nx-title').textContent='nano // '+file;
   $('nx-path').textContent='// '+owner+'/'+file;
   $('nx-code').value=cfgText(file);
+  if($('nx-code')._repaintHL) $('nx-code')._repaintHL();
   $('nx-res').textContent='';
   $('scrim-nano').classList.remove('hide');
   $('nx-code').focus();
@@ -593,6 +1170,7 @@ $('nx-save').onclick=()=>{
       conduction.drift?'w':'ok');
   }
   $('scrim-nano').classList.add('hide');$('termin').focus();
+  saveProgress();
 };
 
 // ---- script editor -------------------------------------------------
@@ -608,11 +1186,13 @@ $('ed-save').onclick=()=>{
        if(typeof fn!=='function') throw new Error('no regulate() function found');
   }catch(err){
     const e=$('errline');e.style.display='block';
+    e.style.color='var(--red)';e.style.borderColor='var(--red)';
     e.textContent='✗ COMPILE ERROR — '+err.message;return;
   }
   libraryText=$('code').value;
   tprint('// regulator.js saved','ok');
   $('scrim-editor').classList.add('hide');$('termin').focus();
+  saveProgress();
 };
 
 // ---- run control ---------------------------------------------------
@@ -629,8 +1209,43 @@ $('run').onclick=()=>{
   sim=setInterval(stepHeart,55);
 };
 $('stop').onclick=()=>{ haltSim();tprint('// routine stopped','d'); };
-$('reset').onclick=()=>{ haltSim();freshPatient();
-  for(const id in NODES){} tprint('// patient reset to baseline','d'); };
+
+// the editor/run controls re-lock when a node is re-sealed
+function lockEditor(){
+  $('run').disabled=true;
+  $('edlock').style.display='';
+}
+// once automation is unlocked, the RESET button does a FULL reset —
+// reflect that in its label so the player knows.
+function reflectUnlock(){
+  if(scriptUnlocked) $('reset').textContent='↺ FULL RESET';
+}
+// full reset — re-seal every node and restore the countermeasures, so
+// the target is a true cold start. Only offered once automation is
+// unlocked: it lets the player exercise a solver.js that does the
+// WHOLE run, breaches included, over and over.
+function fullReset(){
+  haltSim();
+  for(const id in NODES) NODES[id].state='SEALED';
+  failsafe.enabled=true; failsafe.backup=72;
+  conduction.drift=true;
+  lockEditor();
+  freshPatient();
+  positionHotzones();
+  setCwd('/');                  // can't be inside a node that no longer exists
+  usedScript=false;
+  saveProgress();
+}
+$('reset').onclick=()=>{
+  if(scriptUnlocked){
+    fullReset();
+    tprint('// FULL RESET — nodes re-sealed, countermeasures restored','w');
+    tprint('// target is cold — run solver.js to take it from scratch','d');
+  }else{
+    haltSim();freshPatient();usedScript=false;
+    tprint('// patient reset to baseline','d');
+  }
+};
 function haltSim(){
   clearInterval(sim);sim=null;running=false;
   $('run').disabled=(NODES.n_rate.state==='SEALED');$('stop').disabled=true;
@@ -648,11 +1263,17 @@ function stepHeart(){
   setp.rate+=clamp(clamp(req.rate??setp.rate,15,200)-setp.rate,-INERTIA,INERTIA);
   setp.gain+=clamp(clamp(req.gain??setp.gain,0,1.4)-setp.gain,-0.03,0.03);
 
-  // sub-step: countermeasure — visible flicker if it fires
+  // sub-step: countermeasure — visible flicker on bar AND number.
+  // We render the player's DIPPED value for a frame, then the failsafe's
+  // correction, so the displayed BPM genuinely jumps (e.g. 71 -> 72).
   if(failsafe.enabled){
     const before=setp.rate;
     setp.rate+=clamp(failsafe.backup-setp.rate,-0.7,0.7);
-    if(Math.abs(setp.rate-before)>0.15) flashFailsafe();
+    if(Math.abs(setp.rate-before)>0.15){
+      // paint the pre-correction (dipped) reading for one frame
+      const dipped=hw.bpm+(before-hw.bpm)*0.35;
+      flashFailsafe(dipped);
+    }
   }
 
   hw.bpm+=(setp.rate-hw.bpm)*0.35+(Math.random()-0.5)*0.25;
@@ -662,21 +1283,53 @@ function stepHeart(){
   hw.bpm=clamp(hw.bpm,0,220);
   stream.push({bpm:hw.bpm,rhythmVar:hw.rhythmVar,amp:hw.amp,cond:hw.cond});
 
+  beatPhase+=hw.bpm/600;          // sim owns the beat while running
   tick++;
   paintTelemetry();
   const res=checkSignature();
   paintConditions(res);
   drawHeart();
+
+  // --- real-time failure detection (BEFORE win/budget checks) ---
+  // 1. CLIFF: a single-cycle BPM drop larger than the noCliff threshold
+  //    is the same thing the autopsy check looks for, but caught in
+  //    the moment so the player isn't left wondering why the heart
+  //    stopped quietly.
+  if(stream.length>=2){
+    const drop=stream[stream.length-2].bpm-hw.bpm;
+    if(drop>14){ endRun(false,'cliff',{drop:drop.toFixed(1)}); return; }
+  }
+  // 2. TRACE PINNED: trace meter held at FLAGGED for long enough that
+  //    the unit's review subsystem escalates. Visible to the player
+  //    because the meter pegs red and the alert flashes.
+  if(reviewVal>66) flaggedTicks++; else flaggedTicks=Math.max(0,flaggedTicks-2);
+  if(flaggedTicks>60){ endRun(false,'flagged',{}); return; }
+
   if(res.win){ endRun(true);return; }
-  if(tick>=2400){ endRun(false);return; }
+  if(tick>=2400){ endRun(false,'budget',{}); return; }
 }
 let fsTimer=null;
-function flashFailsafe(){
+function flashFailsafe(dippedBpm){
+  // bar flicker
   const f=$('f_bpm');f.classList.remove('flick');void f.offsetWidth;f.classList.add('flick');
-  document.querySelector('.node[data-node=n_rate]').classList.add('fighting');
+  // NUMBER flicker — pulse it, and briefly show the dipped value so the
+  // displayed BPM visibly jumps before paintTelemetry snaps it back
+  const num=$('v_bpm');
+  num.classList.remove('numflick');void num.offsetWidth;num.classList.add('numflick');
+  if(dippedBpm!=null){
+    num.textContent=Math.round(dippedBpm);
+    num.dataset.dipHold='1';                       // mark: hold this reading
+    setTimeout(()=>{ delete num.dataset.dipHold; },90);  // ~1.5 frames
+  }
+  // RATE panel fights back — flag it so the overlay animates, alert
+  document.body.dataset.cmfight='1';
+  positionHotzones();
   const a=$('fsalert');a.style.display='block';
-  clearTimeout(fsTimer);fsTimer=setTimeout(()=>{a.style.display='none';
-    document.querySelector('.node[data-node=n_rate]').classList.remove('fighting');},460);
+  clearTimeout(fsTimer);fsTimer=setTimeout(()=>{
+    a.style.display='none';
+    delete document.body.dataset.cmfight;
+    positionHotzones();
+  },460);
 }
 
 // ---- signature ------------------------------------------------------
@@ -697,35 +1350,277 @@ function checkSignature(){
 }
 
 // ---- rendering -----------------------------------------------------
-function drawHeart(){
-  const el=$('heart');let frame;
-  if(hw.bpm<24){ frame=HF;el.className='flat'; }
-  else{
-    beatPhase+=hw.bpm/600;
-    const open=Math.floor(beatPhase)%2===0;
-    if(hw.amp<0.55){ frame=open?HS:HF;el.className='weak'; }
-    else{ frame=open?HB:HS;el.className=hw.amp<0.8?'weak':''; }
+// renderHeartArt() lays the art out once as a grid of per-glyph spans.
+// drawHeart() runs each frame at the current beatPhase: a brightness +
+// scale pulse on the whole heart, then drawBloodflow() lights the
+// travelling trace. Advancing beatPhase is the caller's job (sim tick
+// or idle loop) so the beat is never advanced twice per frame. The four
+// node panels are inset overlay elements placed by positionHotzones().
+
+const PANEL_STATE={
+  SEALED:   {label:'SEALED',  col:'var(--red)'},
+  BREACHED: {label:'BREACHED',col:'var(--warn)'},
+  CLEARED:  {label:'CLEARED', col:'var(--cyan)'},
+  INJECTED: {label:'INJECTED',col:'var(--bright)'},
+};
+const PANEL_LABEL={ n_rate:'RATE CTRL', n_rhythm:'RHYTHM CTRL',
+                    n_amp:'AMP CTRL',  n_cond:'CONDUCTION' };
+// panel anchor points as fractions of the heart box (x,y in 0..1),
+// chosen to sit on the heart's lobes / vessels / apex path
+const PANEL_POS={
+  n_rate:  {x:0.40, y:0.20},   // upper left — vessel root
+  n_rhythm:{x:0.66, y:0.24},   // upper right — vessel root
+  n_amp:   {x:0.34, y:0.55},   // left lobe body
+  n_cond:  {x:0.58, y:0.78},   // lower centre — toward apex
+};
+
+let heartRendered=false;
+let heartCells=[];   // {span,col,row,ch,lit} for every non-space glyph
+function renderHeartArt(){
+  // render the art as a grid of spans so individual glyphs can glow.
+  // spaces stay as plain text nodes (no span) to keep the DOM light.
+  const el=$('heart');
+  el.textContent='';
+  heartCells=[];
+  const frag=document.createDocumentFragment();
+  for(let r=0;r<HEART_ART.length;r++){
+    const line=HEART_ART[r];
+    for(let c=0;c<line.length;c++){
+      const ch=line[c];
+      if(ch===' '){ frag.appendChild(document.createTextNode(' ')); continue; }
+      const sp=document.createElement('span');
+      sp.className='g';
+      sp.textContent=ch;
+      frag.appendChild(sp);
+      heartCells.push({span:sp,col:c,row:r,ch:ch});
+    }
+    frag.appendChild(document.createTextNode('\n'));
   }
-  el.textContent=frame.join('\n');
+  el.appendChild(frag);
+  heartRendered=true;
+}
+
+// ---- bloodflow trace ----------------------------------------------
+// Pulses of light travel the circulation path by swapping the ASCII
+// GLYPHS they pass over for a dense ramp (+ * # @) and lighting them
+// electric green — the art itself changes, nothing is drawn on top.
+// Each pulse advances ONE chamber per beat: it SNAPS to the next
+// waypoint at the top of the beat (synced to the heart's flash), then
+// holds. Three pulses run the loop spaced apart, so a full circuit
+// takes (waypoints-1) beats and it reads as steady circulation.
+//
+// Path waypoints are fractions of the art grid (x,y in 0..1):
+// vena cava -> right atrium -> right ventricle -> apex turn
+// -> left ventricle -> left atrium -> aorta out -> (loop).
+const FLOW_PATH=[
+  {x:0.46,y:0.06},   // vena cava — venous return
+  {x:0.40,y:0.20},   // right atrium
+  {x:0.34,y:0.42},   // right ventricle
+  {x:0.40,y:0.66},   // toward the apex
+  {x:0.54,y:0.82},   // apex turn
+  {x:0.62,y:0.60},   // left ventricle
+  {x:0.66,y:0.34},   // left atrium
+  {x:0.62,y:0.12},   // aorta — leaving
+];
+const FLOW_SEGS=FLOW_PATH.length-1;          // 7 segments == 7 beats per loop
+function lerp(a,b,t){ return a+(b-a)*t; }
+// squelch curve: the pulse SNAPS to the next chamber right at the top
+// of the beat — synced to the heart's brightness flash — then holds
+// near-still for the rest of the beat. Blood spurts on the beat, then
+// waits. Fast early, flat late.
+function squelch(t){
+  if(t<0.22){
+    const k=t/0.22;                          // 0..1 over the snap window
+    return 0.94*(1-(1-k)*(1-k)*(1-k));       // fast spurt to ~94%
+  }
+  return 0.94 + 0.06*((t-0.22)/0.78);        // creeps the last sliver
+}
+
+// position of a pulse that is `beatsAlong` beats into its circuit;
+// returns grid coords (col,row in 0..1). Loops over the path.
+function flowPos(beatsAlong){
+  const loop=((beatsAlong%FLOW_SEGS)+FLOW_SEGS)%FLOW_SEGS;
+  const si=Math.floor(loop);
+  const ft=squelch(loop-si);                 // hold, then snap on the beat
+  const a=FLOW_PATH[si], b=FLOW_PATH[(si+1)%FLOW_PATH.length];
+  return { x:lerp(a.x,b.x,ft), y:lerp(a.y,b.y,ft) };
+}
+
+// the active pulses: the lead, plus trailers a fixed number of beats back
+const PULSE_OFFSETS=[0, 2.4, 4.8];           // beats behind the lead
+// density ramp the pulse swaps glyphs through — faint edge to hot core
+const PULSE_RAMP=['+','*','#','@'];
+
+function drawBloodflow(){
+  if(!heartRendered) return;
+  const cols=HEART_ART[0].length, rows=HEART_ART.length;
+  // clear last frame: restore the original glyph and styling
+  for(const cell of heartCells){
+    if(cell.lit){
+      cell.span.style.cssText='';
+      if(cell.span.textContent!==cell.ch) cell.span.textContent=cell.ch;
+      cell.lit=false;
+    }
+  }
+  if(hw.bpm<24) return;                       // flatline — no flow
+
+  const amp=clamp(hw.amp,0,1.3);
+  // each pulse is a STREAK, not a dot: sampled at several points trailing
+  // back along the path from the head, each a small radius. Thin + long.
+  const RAD=2.2;                              // streak thickness, in cells
+  const STREAK=0.5;                           // length, in beats of path behind
+  const SAMP=7;                               // points along the streak
+
+  // build the sample points: for each pulse, SAMP points fading back
+  const pts=[];
+  PULSE_OFFSETS.forEach((off,idx)=>{
+    const lead = idx===0?1 : idx===1?0.7 : 0.45;
+    for(let s=0;s<SAMP;s++){
+      const back=s/(SAMP-1);                  // 0 head .. 1 tail
+      pts.push({
+        pos:flowPos(beatPhase-off-back*STREAK),
+        w:lead*(1-back*0.8),                  // head bright, tail faded
+      });
+    }
+  });
+
+  for(const cell of heartCells){
+    let best=0;
+    for(const p of pts){
+      const dx=cell.col-p.pos.x*cols, dy=cell.row-p.pos.y*rows;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d>RAD) continue;
+      const fall=1-d/RAD;                     // 1 at centre -> 0 at edge
+      best=Math.max(best, fall*fall*p.w);
+    }
+    if(best<0.06) continue;
+    const i=clamp(best*amp,0,1);
+    // swap the glyph itself for a dense character — the form changes as
+    // the pulse passes, so it's unmistakable, not just a brightness shift
+    const ri=Math.min(PULSE_RAMP.length-1,Math.floor(i*PULSE_RAMP.length));
+    if(cell.span.textContent!==PULSE_RAMP[ri]) cell.span.textContent=PULSE_RAMP[ri];
+    // and light it electric green so the trail glows as it travels
+    cell.span.style.color='rgb('
+      +Math.round(lerp(150,210,i))+','
+      +Math.round(lerp(240,255,i))+','
+      +Math.round(lerp(150,190,i))+')';
+    cell.span.style.textShadow='0 0 '+(2+i*7).toFixed(1)+'px rgba(120,255,140,'
+      +(0.55+i*0.45).toFixed(2)+')';
+    cell.lit=true;
+  }
+}
+
+function drawHeart(){
+  const el=$('heart');
+  if(!heartRendered) renderHeartArt();
+
+  // beat = brightness + micro-scale pulse, magnitude scaled by amplitude
+  let cls='';
+  if(hw.bpm<24){
+    cls='flat';
+    el.style.transform='scale(1)';
+    el.style.filter='brightness(0.5)';
+  }else{
+    const phase=beatPhase%1;                 // 0..1 within a beat
+    // a sharp systolic contraction then relax: pulse curve
+    const pulse=Math.exp(-phase*6)*0.85 + Math.exp(-((phase-0.16)**2)*40)*0.4;
+    const amp=clamp(hw.amp,0,1.3);
+    const scale=1 + pulse*0.035*amp;          // subtle squeeze
+    const bright=0.72 + pulse*0.55*amp + (amp-1)*0.1;
+    el.style.transform='scale('+scale.toFixed(4)+')';
+    el.style.filter='brightness('+clamp(bright,0.4,1.7).toFixed(3)+')';
+    cls = hw.amp<0.55 ? 'flat' : hw.amp<0.8 ? 'weak' : '';
+  }
+  el.className=cls;
+  drawBloodflow();                            // glyph-glow trace, same clock
+}
+
+// build / update the four inset panel overlays and their click-zones
+function positionHotzones(){
+  const heart=$('heart');
+  const bw=heart.offsetWidth, bh=heart.offsetHeight;
+  for(const id in PANEL_LABEL){
+    let hz=document.querySelector(`.hotzone[data-node="${id}"]`);
+    if(!hz) continue;
+    const pos=PANEL_POS[id];
+    const st=NODES[id].state, p=PANEL_STATE[st];
+    const fighting = id==='n_rate' && document.body.dataset.cmfight==='1';
+    // the panel reads as an inset cell on the heart surface
+    hz.innerHTML=
+      '<span class="pnl-tag">'+PANEL_LABEL[id]+'</span>'+
+      '<span class="pnl-st">'+p.label+'</span>';
+    hz.style.left=(pos.x*bw)+'px';
+    hz.style.top =(pos.y*bh)+'px';
+    hz.style.setProperty('--pcol',p.col);
+    hz.classList.toggle('fighting',fighting);
+    hz.dataset.state=st;
+  }
+}
+
+// scale the whole heartbox to fit the stage — so the heart fills the
+// space on any screen (and never overflows on a narrow phone). The
+// beat pulse lives on #heart's own transform, so it stays independent.
+function fitHeart(){
+  const stage=$('stage'), box=$('heartbox'), heart=$('heart');
+  if(!heartRendered) renderHeartArt();
+  box.style.transform='scale(1)';            // measure unscaled
+  const natW=heart.offsetWidth, natH=heart.offsetHeight;
+  if(!natW||!natH) return;
+  const availW=stage.clientWidth-20, availH=stage.clientHeight-20;
+  const scale=Math.min(availW/natW, availH/natH, 2.2);
+  box.style.transform='scale('+Math.max(scale,0.1).toFixed(3)+')';
+}
+function relayoutHeart(){
+  fitHeart();
+  positionHotzones();
+  drawBloodflow();     // refresh the glyph-glow trace at the current phase
 }
 function paintTelemetry(){
-  $('v_bpm').textContent=hw.bpm.toFixed(0);
+  // while a countermeasure dip is being held, don't overwrite the BPM
+  // number — let the dipped reading linger so the jump is visible
+  if(!$('v_bpm').dataset.dipHold) $('v_bpm').textContent=hw.bpm.toFixed(0);
   $('v_var').textContent=hw.rhythmVar.toFixed(3);
   $('v_amp').textContent=hw.amp.toFixed(2);
   $('v_cond').textContent=hw.cond.toFixed(0);
   $('v_tick').textContent=tick+' / 2400';
+
+  // BPM — a vital sign: healthy green, amber as it falls, red at arrest range
   $('f_bpm').style.width=clamp(hw.bpm/160*100,2,100)+'%';
-  $('f_bpm').style.background='var(--bright)';
+  let bpmCol = hw.bpm>=60 ? '#5fe070' : hw.bpm>=42 ? 'var(--warn)' : 'var(--red)';
+  $('f_bpm').style.background=bpmCol;
+  $('v_bpm').style.color=bpmCol;
+
+  // rhythm variance — cyan when smooth, red once it crosses the 0.15 line
   $('f_var').style.width=clamp(hw.rhythmVar/0.4*100,2,100)+'%';
-  $('f_var').style.background=hw.rhythmVar<0.15?'var(--ink)':'var(--red)';
+  let varCol = hw.rhythmVar<0.15 ? 'var(--cyan)' : 'var(--red)';
+  $('f_var').style.background=varCol;
+  $('v_var').style.color=varCol;
+
+  // amplitude — its own warm hue, dimming as contractility fades
   $('f_amp').style.width=clamp(hw.amp/1.4*100,2,100)+'%';
-  $('f_amp').style.background='var(--ink)';
+  let ampCol = hw.amp>=0.8 ? '#c89bff' : hw.amp>=0.4 ? 'var(--warn)' : 'var(--red)';
+  $('f_amp').style.background=ampCol;
+  $('v_amp').style.color=ampCol;
+
+  // conduction — blue, reddening as delay drifts off-nominal
   $('f_cond').style.width=clamp((hw.cond-80)/220*100,2,100)+'%';
-  $('f_cond').style.background='var(--ink)';
+  let condCol = Math.abs(hw.cond-120)<40 ? '#58a6ff' : 'var(--warn)';
+  $('f_cond').style.background=condCol;
+  $('v_cond').style.color=condCol;
+
+  // trace meter — green / amber / red bands; warn the first time the
+  // meter pegs into FLAGGED so the player isn't surprised by the
+  // resulting end-run failure
   $('f_rev').style.width=clamp(reviewVal,4,100)+'%';
   let band='nominal',col='var(--bright)';
   if(reviewVal>33){band='scrutiny';col='var(--warn)';}
-  if(reviewVal>66){band='FLAGGED';col='var(--red)';}
+  if(reviewVal>66){
+    band='FLAGGED';col='var(--red)';
+    if(!flaggedWarned && running){
+      tprint('// ⚠ TRACE FLAGGED — sustained visible tampering will end the run','e');
+      flaggedWarned=true;
+    }
+  }
   $('f_rev').style.background=col;$('v_rev').textContent=band;$('v_rev').style.color=col;
 }
 function paintConditions(res){
@@ -766,7 +1661,7 @@ function recordBest(sc){
   return improved;
 }
 
-function endRun(win){
+function endRun(win,reason,info){
   haltSim();
   if(win){
     const sc=computeScore();
@@ -789,27 +1684,708 @@ function endRun(win){
         +improved.join(', ')+'</p>':'<p class="small">no axis beaten this run — try a different approach.</p>');
     tprint('// CONTRACT COMPLETE — time '+sc.time+' · trace '+sc.trace+
            ' · ram '+sc.ram+' · loc '+sc.loc,'ok');
+    // earned unlock: beating the contract BY HAND opens the automation
+    // toolkit — the prototype's model of GREYNET's "automation is
+    // earned mastery" principle (spec P6).
+    if(!scriptUnlocked && !usedScript){
+      scriptUnlocked=true;
+      reflectUnlock();
+      $('rx-body').innerHTML+=
+        '<div class="verdict win" style="margin-top:12px">'+
+        'AUTOMATION TOOLKIT UNLOCKED</div>'+
+        '<p>You have proven the contract by hand. The <b>ns.greynet</b> '+
+        'scripting API is now available — type <code>script</code> in the '+
+        'terminal to open <b>solver.js</b> and automate the whole thing. '+
+        'The <b>RESET</b> control now does a full reset — re-sealing every '+
+        'node — so your solver can take the target from scratch each run.</p>';
+      tprint('// ★ automation unlocked — type  script  to open solver.js','ok');
+      tprint('// RESET now re-seals all nodes for a clean solver run','d');
+    }
+    saveProgress();             // persist new bests and the unlock
   }else{
+    info=info||{};
+    // Real-time fails (cliff, flagged) play the cinematic detection
+    // cascade; budget-expiry stays a calm verdict because it's a
+    // different kind of failure (timed out, not caught).
+    if(reason==='cliff' || reason==='flagged'){
+      playDetection(reason,info);
+      return;
+    }
     $('rx-title').textContent='✗ CYCLE BUDGET EXPIRED';
     $('rx-sub').textContent='// the signature was not met in time';
     $('rx-body').innerHTML='<div class="verdict fail">CONTRACT FAILED</div>'+
-      '<p>Check which signature conditions stayed red, and why. The docs on '+
-      'each node explain the system — and its countermeasures.</p>';
-    tprint('// cycle budget expired — contract failed','e');
+      '<p>The run hit the 2400-cycle budget without all five '+
+      'signature clauses holding at once. Check which clauses stayed '+
+      'red in the sidebar, and re-read the relevant node docs — they '+
+      'name the field, the units, and what each one is sensitive to.</p>';
+    tprint('// ✗ cycle budget expired — signature unmet','e');
   }
   $('scrim-result').classList.remove('hide');
 }
+
+// ====================================================================
+// Detection cascade — fires on real-time fails. Classic movie reveal:
+// lines stream in one at a time, a red trace bar fills, then a RESET
+// IP button appears blinking. Click halts the trace, soft-resets the
+// run (physiology only), and surfaces the post-mortem.
+// ====================================================================
+const CASCADE_SCRIPTS={
+  cliff:[
+    {t:'ok',  m:'> monitoring cardiac log...'},
+    {t:'hi',  m:'> rapid BPM decline detected'},
+    {t:'',    m:'> beginning diagnostics...'},
+    {t:'',    m:'  - sampling last 6 cycles'},
+    {t:'',    m:'  - measuring inter-cycle deltas'},
+    {t:'',    m:'  - cross-referencing failsafe override events'},
+    {t:'hi',  m:'> conclusion: malicious code injection'},
+    {t:'hi',  m:'> risk: unnatural death, autopsy escalation likely'},
+    {t:'',    m:'> resetting failsafes...'},
+    {t:'',    m:'> triggering cardiac restart...'},
+    {t:'crit',m:'> OUTBOUND TRACE STARTED'},
+  ],
+  flagged:[
+    {t:'ok',  m:'> review subsystem: passive scan...'},
+    {t:'hi',  m:'> sustained setpoint deviation detected'},
+    {t:'',    m:'> beginning diagnostics...'},
+    {t:'',    m:'  - sampling regulate() request history'},
+    {t:'',    m:'  - comparing requested vs observed BPM'},
+    {t:'',    m:'  - correlating with failsafe correction count'},
+    {t:'hi',  m:'> conclusion: external regulator non-cooperative'},
+    {t:'hi',  m:'> risk: tampering signature in cardiac log'},
+    {t:'',    m:'> resetting failsafes...'},
+    {t:'',    m:'> triggering cardiac restart...'},
+    {t:'crit',m:'> OUTBOUND TRACE STARTED'},
+  ],
+};
+const POSTMORTEM={
+  cliff:{
+    title:'// rapid BPM decline detected',
+    body:'<p>BPM fell by <b>{drop}</b> in a single cardiac cycle. That '+
+      'crossed the threshold the unit\'s review subsystem watches for — '+
+      'a natural decline never drops that fast.</p>'+
+      '<p>The change in BPM was too quick, it triggered the alert. '+
+      'Perhaps there is something in the docs on one of the servers '+
+      'about how the failsafe works, and what kind of rate changes it '+
+      'considers "unsafe". Coax the rate down a little at a time '+
+      'instead of jamming it.</p>'+
+      '<p class="small" style="color:var(--dim)">try  '+
+      '<code>cd n_rate</code>  then  <code>cat rate-controller.txt</code></p>',
+  },
+  flagged:{
+    title:'// sustained tampering on the cardiac log',
+    body:'<p>The trace meter held at FLAGGED long enough for the unit '+
+      'to escalate. Each cycle where your requested setpoint sat far '+
+      'from the actual reading added evidence to the cardiac log; the '+
+      'log was loud enough that the review subsystem caught up to it.</p>'+
+      '<p>Move setpoints in small steps. The failsafe will still '+
+      'correct sharp moves on its own — but every correction it makes '+
+      'is a line in the log. Quieter is better.</p>'+
+      '<p class="small" style="color:var(--dim)">try  '+
+      '<code>cd n_rate</code>  then  <code>cat emergency-settings.cfg</code></p>',
+  },
+};
+let cascadeAbort=null, cascadeTrace=0;
+function playDetection(reason,info){
+  const script=CASCADE_SCRIPTS[reason];
+  const log=$('detect-log');
+  const fill=$('detect-fill'), pct=$('detect-pct'), btn=$('detect-reset');
+  log.textContent='';
+  fill.style.width='0%'; pct.textContent='0%';
+  btn.classList.add('hide');
+  cascadeTrace=0;
+  $('scrim-detect').classList.remove('hide');
+
+  let cancelled=false;
+  cascadeAbort=()=>{ cancelled=true; };
+
+  // type one line, char by char, then move on
+  const typeLine=(line,cb)=>{
+    const span=document.createElement('span');
+    if(line.t) span.className=line.t;
+    span.classList.add('caret');
+    log.appendChild(span);
+    let i=0;
+    const step=()=>{
+      if(cancelled) return;
+      if(i<line.m.length){
+        span.textContent=line.m.slice(0,++i);
+        setTimeout(step, 14+Math.random()*22);
+      }else{
+        span.classList.remove('caret');
+        log.appendChild(document.createTextNode('\n'));
+        cb();
+      }
+    };
+    step();
+  };
+  // creep the trace bar forward in the background while lines stream
+  const traceTimer=setInterval(()=>{
+    if(cancelled){ clearInterval(traceTimer); return; }
+    cascadeTrace=Math.min(98, cascadeTrace + (cascadeTrace<60?0.6:0.35));
+    fill.style.width=cascadeTrace+'%';
+    pct.textContent=Math.floor(cascadeTrace)+'%';
+  },95);
+
+  // play the scripted lines one after another with a brief gap
+  let li=0;
+  const next=()=>{
+    if(cancelled) return;
+    if(li>=script.length){
+      clearInterval(traceTimer);
+      // surface the RESET IP button — the trace keeps creeping until
+      // they click, so the urgency is real
+      btn.classList.remove('hide');
+      const urgent=setInterval(()=>{
+        if(cancelled){ clearInterval(urgent); return; }
+        cascadeTrace=Math.min(100, cascadeTrace+0.25);
+        fill.style.width=cascadeTrace+'%';
+        pct.textContent=Math.floor(cascadeTrace)+'%';
+      },120);
+      btn.onclick=()=>{
+        cancelled=true; clearInterval(urgent);
+        $('scrim-detect').classList.add('hide');
+        // soft reset: physiology only, keep breaches/configs/code
+        freshPatient();
+        // open the post-mortem with the targeted explanation
+        const pm=POSTMORTEM[reason];
+        $('pm-title').textContent=pm.title;
+        $('pm-body').innerHTML='<div class="verdict fail" style="margin-bottom:10px">'+
+          'RUN ABORTED — IP RESET</div>'+
+          pm.body.replace('{drop}',info.drop||'?');
+        $('scrim-post').classList.remove('hide');
+        tprint('// IP reset before the trace closed — '+
+               (reason==='cliff'?'the decline was too sharp':
+                'too much visible tampering'),'e');
+      };
+      return;
+    }
+    const line=script[li++];
+    typeLine(line, ()=>setTimeout(next, 280+Math.random()*180));
+  };
+  next();
+}
+$('pm-close').onclick=()=>{ $('scrim-post').classList.add('hide');$('termin').focus(); };
 function axCard(k,v,star){
   return '<div class="sax"><div class="k">'+k+(star?' ★':'')+'</div>'+
          '<div class="v" style="'+(star?'color:var(--bright)':'')+'">'+v+'</div></div>';
 }
 $('rx-close').onclick=()=>{ $('scrim-result').classList.add('hide');$('termin').focus(); };
 
+// ====================================================================
+// ns.greynet — the scriptable API. This is the prototype's stand-in for
+// the real mod's automation surface (Doc 5). Every manual action above
+// has a method here, so a tester can AUTOMATE the contract.
+// ====================================================================
+function apiBreached(id){ return NODES[id] && NODES[id].state!=='SEALED'; }
+const nsGreynet={
+  // --- recon ---
+  async scan(){
+    return Object.keys(NODES).map(id=>({id,name:NODES[id].name,state:NODES[id].state}));
+  },
+  async inspect(id){
+    if(!NODES[id]) throw new Error('inspect: unknown node '+id);
+    return {id,state:NODES[id].state,breachPuzzle:BREACH[id]?.family,
+            files:apiBreached(id)?filesFor(id):[]};
+  },
+  // --- breach ---
+  async getBreachPuzzle(id){
+    if(!BREACH[id]) throw new Error('getBreachPuzzle: unknown node '+id);
+    const b=BREACH[id];
+    // returns the captured handshake; the solver writes code to match rule()
+    return {node:id,family:b.family,shown:b.shown.map(p=>p.slice()),
+            probe:[...b.shown.map(p=>p[0]),...b.test]};
+  },
+  async submitBreach(id,answerFn){
+    const b=BREACH[id];
+    if(!b) throw new Error('submitBreach: unknown node '+id);
+    if(NODES[id].state!=='SEALED') return true;
+    const all=[...b.shown.map(p=>p[0]),...b.test];
+    for(const n of all){
+      let got; try{ got=answerFn(n); }catch(e){ return false; }
+      if(got!==b.rule(n)) return false;
+    }
+    setNodeState(id,'BREACHED');
+    if(id==='n_rate') unlockEditor();
+    return true;
+  },
+  // --- discovery ---
+  async ls(id){
+    if(!apiBreached(id)) throw new Error('ls: '+id+' not breached');
+    return filesFor(id);
+  },
+  async cat(id,file){
+    if(!apiBreached(id)) throw new Error('cat: '+id+' not breached');
+    const t=DOCS[file]||cfgText(file);
+    if(t==null) throw new Error('cat: '+file+' not found');
+    return t;
+  },
+  // --- countermeasure ---
+  async getCountermeasure(id){
+    if(id==='n_rate') return {node:id,form:'config',file:'emergency-settings.cfg',
+      active:failsafe.enabled};
+    if(id==='n_cond') return {node:id,form:'config',file:'drift-comp.cfg',
+      active:conduction.drift};
+    return null;
+  },
+  async writeConfig(id,file,txt){
+    if(!apiBreached(id)) throw new Error('writeConfig: '+id+' not breached');
+    if(file==='emergency-settings.cfg'){
+      const en=/FAILSAFE_ENABLED\s*=\s*(true|false)/i.exec(txt);
+      const bk=/BACKUP_SETPOINT\s*=\s*(-?\d+(?:\.\d+)?)/i.exec(txt);
+      if(!en||!bk) throw new Error('writeConfig: parse error');
+      failsafe.enabled=/true/i.test(en[1]);failsafe.backup=clamp(+bk[1],0,200);
+      return true;
+    }
+    if(file==='drift-comp.cfg'){
+      const dc=/DRIFT_COMPENSATION\s*=\s*(enabled|disabled)/i.exec(txt);
+      if(!dc) throw new Error('writeConfig: parse error');
+      conduction.drift=/enabled/i.test(dc[1]);return true;
+    }
+    throw new Error('writeConfig: '+file+' is not a config file');
+  },
+  // --- engagement ---
+  async deployLibrary(src){
+    try{ const fn=new Function(src+'\n;return regulate;')();
+         if(typeof fn!=='function') throw new Error('no regulate() found');
+    }catch(e){ throw new Error('deployLibrary: '+e.message); }
+    libraryText=src;
+    return true;
+  },
+  async run(){ if($('run').disabled) throw new Error('run: routine not ready'); $('run').onclick(); },
+  async stop(){ $('stop').onclick(); },
+  // --- monitoring ---
+  telemetry(){ return {bpm:hw.bpm,rhythmVar:hw.rhythmVar,amp:hw.amp,cond:hw.cond,tick}; },
+  signatureMet(){ return checkSignature().win; },
+  traceBand(){ return reviewVal>66?'flagged':reviewVal>33?'scrutiny':'nominal'; },
+  ticksElapsed(){ return tick; },
+  tickBudget(){ return 2400; },
+};
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// ---- script editor open / run --------------------------------------
+function openScript(){ $('scripterr').style.display='none';
+  $('scrim-script').classList.remove('hide');$('scriptcode').focus(); }
+$('sc-close').onclick=()=>{ $('scrim-script').classList.add('hide');$('termin').focus();
+  saveProgress(); };
+$('sc-run').onclick=async()=>{
+  $('scripterr').style.display='none';
+  const src=$('scriptcode').value;
+  tprint('// solver.js — running','w');
+  // the script runs with: ns.greynet, log(), sleep()
+  const log=m=>tprint('  [solver] '+m,'d');
+  const ns={greynet:nsGreynet};
+  let body;
+  try{
+    body=new Function('ns','log','sleep',
+      '"use strict";return (async()=>{'+src+'\n})();');
+  }catch(err){
+    const e=$('scripterr');e.style.display='block';
+    e.style.color='var(--red)';e.style.borderColor='var(--red)';
+    e.textContent='✗ COMPILE ERROR — '+err.message;return;
+  }
+  $('scrim-script').classList.add('hide');
+  usedScript=true;             // this run-up to a win used automation
+  try{
+    await body(ns,log,sleep);
+    tprint('// solver.js — finished','ok');
+  }catch(err){
+    tprint('// solver.js — runtime error: '+err.message,'e');
+  }
+  $('termin').focus();
+};
+
+// ====================================================================
+// Syntax highlighting — a <pre.hl> behind each textarea shows coloured
+// code; the textarea on top is transparent-text with a visible caret.
+// ====================================================================
+const JS_KEYWORDS=new Set(('await async function return const let var if else for '
+  +'while of in new typeof break continue try catch throw true false null '
+  +'undefined this').split(' '));
+
+function escHTML(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// tokenise + colour a line of JavaScript
+function hlJS(src){
+  let out='', i=0;
+  const n=src.length;
+  while(i<n){
+    const c=src[i];
+    // line comment
+    if(c==='/'&&src[i+1]==='/'){
+      let j=src.indexOf('\n',i); if(j<0) j=n;
+      out+='<span class="t-com">'+escHTML(src.slice(i,j))+'</span>'; i=j; continue;
+    }
+    // string (single / double / backtick)
+    if(c==='"'||c==="'"||c==='`'){
+      let j=i+1;
+      while(j<n && src[j]!==c){ if(src[j]==='\\') j++; j++; }
+      j=Math.min(j+1,n);
+      out+='<span class="t-str">'+escHTML(src.slice(i,j))+'</span>'; i=j; continue;
+    }
+    // number
+    if(/[0-9]/.test(c)){
+      let j=i; while(j<n && /[0-9.]/.test(src[j])) j++;
+      out+='<span class="t-num">'+escHTML(src.slice(i,j))+'</span>'; i=j; continue;
+    }
+    // identifier / keyword / function name
+    if(/[A-Za-z_$]/.test(c)){
+      let j=i; while(j<n && /[A-Za-z0-9_$]/.test(src[j])) j++;
+      const word=src.slice(i,j);
+      let nx=j; while(nx<n && src[nx]===' ') nx++;
+      if(JS_KEYWORDS.has(word))
+        out+='<span class="t-key">'+escHTML(word)+'</span>';
+      else if(src[nx]==='(' || GREYNET_API.includes(word))
+        out+='<span class="t-fn">'+escHTML(word)+'</span>';
+      else out+=escHTML(word);
+      i=j; continue;
+    }
+    // punctuation / operators
+    if(/[{}()\[\];,.<>+\-*/%=!&|?:]/.test(c)){
+      out+='<span class="t-op">'+escHTML(c)+'</span>'; i++; continue;
+    }
+    out+=escHTML(c); i++;
+  }
+  return out;
+}
+
+// colour a config file: KEY = value, # comments
+function hlCfg(src){
+  return src.split('\n').map(line=>{
+    const h=line.indexOf('#');
+    if(h===0) return '<span class="t-com">'+escHTML(line)+'</span>';
+    const m=/^(\s*)([A-Z_][A-Z0-9_]*)(\s*=\s*)(.*)$/.exec(line);
+    if(!m) return escHTML(line);
+    return escHTML(m[1])+'<span class="t-cfg">'+escHTML(m[2])+'</span>'
+      +'<span class="t-op">'+escHTML(m[3])+'</span>'
+      +'<span class="t-str">'+escHTML(m[4])+'</span>';
+  }).join('\n');
+}
+
+// wrap a textarea: build the .hl layer behind it, keep them in sync
+function attachHighlight(ta,mode){
+  const wrap=document.createElement('div');
+  wrap.className='edwrap';
+  ta.parentNode.insertBefore(wrap,ta);
+  const hl=document.createElement('pre');
+  hl.className='hl';
+  hl.setAttribute('aria-hidden','true');
+  wrap.appendChild(hl);
+  wrap.appendChild(ta);
+  const paint=()=>{
+    const code=ta.value;
+    hl.innerHTML=(mode==='cfg'?hlCfg(code):hlJS(code))+'\n';
+    hl.scrollTop=ta.scrollTop; hl.scrollLeft=ta.scrollLeft;
+  };
+  ta.addEventListener('input',paint);
+  ta.addEventListener('scroll',()=>{ hl.scrollTop=ta.scrollTop;hl.scrollLeft=ta.scrollLeft; });
+  ta._repaintHL=paint;          // so enhanceEditor's edits can trigger it
+  paint();
+}
+
+// ====================================================================
+// Code-editor enhancement — makes the textareas behave like an editor.
+// Tab indents, Shift-Tab outdents, Enter auto-indents, brackets and
+// quotes auto-close, and Ctrl-Space / Tab completes ns.greynet methods.
+// ====================================================================
+const GREYNET_API=['scan','inspect','getBreachPuzzle','submitBreach','ls','cat',
+  'getCountermeasure','writeConfig','deployLibrary','run','stop','telemetry',
+  'signatureMet','traceBand','ticksElapsed','tickBudget'];
+const PAIRS={'(':')','[':']','{':'}','"':'"',"'":"'",'`':'`'};
+
+function enhanceEditor(ta,opts){
+  opts=opts||{};
+  // any programmatic edit below must refresh the highlight layer
+  const repaint=()=>{ if(ta._repaintHL) ta._repaintHL(); };
+  ta.addEventListener('keydown',e=>{
+    const v=ta.value, s=ta.selectionStart, en=ta.selectionEnd;
+    const lineStart=v.lastIndexOf('\n',s-1)+1;
+    const curLine=v.slice(lineStart,s);
+
+    // --- Tab: API completion, or indent ---
+    if(e.key==='Tab'){
+      e.preventDefault();
+      // try ns.greynet.<partial>  completion (JS editors only)
+      if(opts.api && s===en){
+        const m=/ns\.greynet\.([a-zA-Z]*)$/.exec(v.slice(0,s));
+        if(m){
+          const part=m[1];
+          const hit=GREYNET_API.filter(n=>n.startsWith(part));
+          if(hit.length===1){
+            const add=hit[0].slice(part.length)+'(';
+            ta.value=v.slice(0,s)+add+v.slice(en);
+            ta.selectionStart=ta.selectionEnd=s+add.length;
+            return;
+          }else if(hit.length>1){
+            // complete the shared prefix, show options in errline if present
+            const pre=sharedPrefix(hit);
+            if(pre.length>part.length){
+              const add=pre.slice(part.length);
+              ta.value=v.slice(0,s)+add+v.slice(en);
+              ta.selectionStart=ta.selectionEnd=s+add.length;
+            }
+            if(opts.hint) opts.hint('ns.greynet — '+hit.join('  '));
+            return;
+          }
+        }
+      }
+      // multi-line selection: indent / outdent the block
+      if(s!==en || e.shiftKey){
+        const blockStart=v.lastIndexOf('\n',s-1)+1;
+        let block=v.slice(blockStart,en);
+        if(e.shiftKey){
+          block=block.replace(/^( {1,2}|\t)/gm,'');
+        }else{
+          block=block.replace(/^/gm,'  ');
+        }
+        ta.value=v.slice(0,blockStart)+block+v.slice(en);
+        ta.selectionStart=blockStart; ta.selectionEnd=blockStart+block.length;
+      }else{
+        ta.value=v.slice(0,s)+'  '+v.slice(en);
+        ta.selectionStart=ta.selectionEnd=s+2;
+      }
+      return;
+    }
+
+    // --- Enter: keep the current line's indentation, and open a block ---
+    if(e.key==='Enter'){
+      const indent=(curLine.match(/^[ \t]*/)||[''])[0];
+      const opensBlock=/[{([]\s*$/.test(curLine);
+      const nextChar=v.slice(s,s+1);
+      e.preventDefault();
+      if(opensBlock && PAIRS[curLine.trim().slice(-1)]===nextChar){
+        // caret between a pair: expand to a tidy block
+        const inner='\n'+indent+'  ', outer='\n'+indent;
+        ta.value=v.slice(0,s)+inner+outer+v.slice(en);
+        ta.selectionStart=ta.selectionEnd=s+inner.length;
+      }else{
+        const add='\n'+indent+(opensBlock?'  ':'');
+        ta.value=v.slice(0,s)+add+v.slice(en);
+        ta.selectionStart=ta.selectionEnd=s+add.length;
+      }
+      return;
+    }
+
+    // --- auto-closing brackets and quotes ---
+    if(PAIRS[e.key] && !e.ctrlKey && !e.metaKey){
+      const nextChar=v.slice(s,s+1);
+      // if typing a closer that's already there, just step over it
+      if((e.key===')'||e.key===']'||e.key==='}') && nextChar===e.key){
+        e.preventDefault();
+        ta.selectionStart=ta.selectionEnd=s+1; return;
+      }
+      // wrap a selection
+      if(s!==en){
+        e.preventDefault();
+        const sel=v.slice(s,en);
+        ta.value=v.slice(0,s)+e.key+sel+PAIRS[e.key]+v.slice(en);
+        ta.selectionStart=s+1; ta.selectionEnd=en+1; return;
+      }
+      // don't double-close quotes mid-word
+      if((e.key==='"'||e.key==="'"||e.key==='`') && /\w/.test(nextChar)) return;
+      e.preventDefault();
+      ta.value=v.slice(0,s)+e.key+PAIRS[e.key]+v.slice(en);
+      ta.selectionStart=ta.selectionEnd=s+1; return;
+    }
+
+    // --- Backspace: delete an empty pair together ---
+    if(e.key==='Backspace' && s===en && s>0){
+      const before=v[s-1], after=v[s];
+      if(PAIRS[before]===after){
+        e.preventDefault();
+        ta.value=v.slice(0,s-1)+v.slice(s+1);
+        ta.selectionStart=ta.selectionEnd=s-1; return;
+      }
+    }
+
+    // --- Ctrl-Space: force the API hint ---
+    if(e.key===' ' && e.ctrlKey && opts.api && opts.hint){
+      e.preventDefault();
+      opts.hint('ns.greynet — '+GREYNET_API.join('  '));
+      return;
+    }
+  });
+  // refresh the highlight layer after any edit the keydown handler made
+  // (programmatic ta.value changes don't fire 'input')
+  ta.addEventListener('keyup',repaint);
+}
+function sharedPrefix(arr){
+  if(!arr.length) return '';
+  let p=arr[0];
+  for(const s of arr) while(!s.startsWith(p)) p=p.slice(0,-1);
+  return p;
+}
+
+// apply to the editors — JS editors get API completion, nano gets indent only;
+// all four get syntax highlighting (JS mode, or config mode for nano)
+attachHighlight($('code'),'js');
+attachHighlight($('scriptcode'),'js');
+attachHighlight($('bx-code'),'js');
+attachHighlight($('nx-code'),'cfg');
+enhanceEditor($('code'),      {api:true, hint:m=>{ const e=$('errline');
+  e.style.display='block';e.style.color='var(--cyan)';e.style.borderColor='var(--cyan)';
+  e.textContent='⌨ '+m; }});
+enhanceEditor($('scriptcode'),{api:true, hint:m=>{ const e=$('scripterr');
+  e.style.display='block';e.style.color='var(--cyan)';e.style.borderColor='var(--cyan)';
+  e.textContent='⌨ '+m; }});
+enhanceEditor($('bx-code'),   {api:false});
+enhanceEditor($('nx-code'),   {api:false});
+
+// ---- resizable panels ----------------------------------------------
+// Two drag gutters: one sets the terminal height, one the sidebar
+// width. After a drag the heart refits via relayoutHeart().
+function makeGutter(gutterId,opts){
+  const g=$(gutterId);
+  let dragging=false;
+  const onMove=e=>{
+    if(!dragging) return;
+    const pt=e.touches?e.touches[0]:e;
+    opts.apply(pt);
+    relayoutHeart();
+  };
+  const stop=()=>{
+    dragging=false;g.classList.remove('drag');
+    document.body.style.userSelect='';
+    window.removeEventListener('mousemove',onMove);
+    window.removeEventListener('touchmove',onMove);
+    window.removeEventListener('mouseup',stop);
+    window.removeEventListener('touchend',stop);
+  };
+  const start=e=>{
+    dragging=true;g.classList.add('drag');
+    document.body.style.userSelect='none';
+    window.addEventListener('mousemove',onMove);
+    window.addEventListener('touchmove',onMove,{passive:false});
+    window.addEventListener('mouseup',stop);
+    window.addEventListener('touchend',stop);
+    e.preventDefault();
+  };
+  g.addEventListener('mousedown',start);
+  g.addEventListener('touchstart',start,{passive:false});
+}
+// terminal height: drag the horizontal gutter. The terminal grows
+// upward as you drag up, so height = distance from pointer to viewport
+// foot, clamped.
+makeGutter('gutter-term',{apply:pt=>{
+  const h=clamp(window.innerHeight-pt.clientY, 90, window.innerHeight*0.7);
+  $('term').style.height=h+'px';
+}});
+// sidebar width: drag the vertical gutter. width = distance from
+// pointer to the right edge, clamped.
+makeGutter('gutter-side',{apply:pt=>{
+  const w=clamp(window.innerWidth-pt.clientX, 220, window.innerWidth*0.55);
+  document.querySelector('.sidebar').style.width=w+'px';
+}});
+
+// ---- font-size / zoom control --------------------------------------
+// Scales the whole interface. Uses CSS zoom on the root so layout,
+// text and spacing all rescale proportionally and stay aligned.
+let zoomLevel=100;
+const ZOOM_MIN=70, ZOOM_MAX=200, ZOOM_STEP=10;
+function applyZoom(){
+  document.body.style.zoom = (zoomLevel/100);
+  $('zoom-val').textContent = zoomLevel+'%';
+  $('zoom-out').disabled = zoomLevel<=ZOOM_MIN;
+  $('zoom-in').disabled  = zoomLevel>=ZOOM_MAX;
+  // the heart's pixel size changed — refit and re-place the click-zones
+  requestAnimationFrame(relayoutHeart);
+}
+$('zoom-in').onclick =()=>{ zoomLevel=Math.min(ZOOM_MAX,zoomLevel+ZOOM_STEP);applyZoom(); };
+$('zoom-out').onclick=()=>{ zoomLevel=Math.max(ZOOM_MIN,zoomLevel-ZOOM_STEP);applyZoom(); };
+// Ctrl +/- / 0 as well, the familiar shortcuts
+document.addEventListener('keydown',e=>{
+  if(!e.ctrlKey && !e.metaKey) return;
+  if(e.key==='='||e.key==='+'){ e.preventDefault();$('zoom-in').onclick(); }
+  else if(e.key==='-'){ e.preventDefault();$('zoom-out').onclick(); }
+  else if(e.key==='0'){ e.preventDefault();zoomLevel=100;applyZoom(); }
+});
+applyZoom();
+window.addEventListener('resize',()=>requestAnimationFrame(relayoutHeart));
+
+// ---- progress persistence ------------------------------------------
+// Contracts take a while, so progress survives a window close via
+// localStorage. We persist PROGRESS (breached nodes, edited code,
+// countermeasure config, the unlock and personal bests) — never the
+// live physiology, so a reload always drops you at a fresh patient
+// with your progress intact.
+const SAVE_KEY='greynet-gn2241-v1';
+function saveProgress(){
+  try{
+    const data={
+      nodes:Object.fromEntries(Object.keys(NODES).map(id=>[id,NODES[id].state])),
+      failsafe:{enabled:failsafe.enabled,backup:failsafe.backup},
+      conduction:{drift:conduction.drift},
+      library:libraryText,
+      solver:$('scriptcode')?$('scriptcode').value:'',
+      scriptUnlocked,
+      best,
+      cwd,
+    };
+    localStorage.setItem(SAVE_KEY,JSON.stringify(data));
+  }catch(e){ /* storage unavailable / full — fail quietly */ }
+}
+function loadProgress(){
+  let data;
+  try{ data=JSON.parse(localStorage.getItem(SAVE_KEY)||'null'); }
+  catch(e){ data=null; }
+  if(!data) return false;
+  // node states
+  if(data.nodes) for(const id in NODES)
+    if(data.nodes[id]) NODES[id].state=data.nodes[id];
+  // countermeasure config
+  if(data.failsafe){ failsafe.enabled=data.failsafe.enabled;
+    failsafe.backup=data.failsafe.backup; }
+  if(data.conduction) conduction.drift=data.conduction.drift;
+  // player code
+  if(typeof data.library==='string'){ libraryText=data.library;
+    if($('code')) $('code').value=data.library; }
+  if(typeof data.solver==='string' && $('scriptcode'))
+    $('scriptcode').value=data.solver;
+  // unlock + bests
+  if(data.scriptUnlocked){ scriptUnlocked=true; reflectUnlock(); }
+  if(data.best) best=data.best;
+  // restore cwd — only if the node still exists and is breached
+  if(data.cwd==='/') setCwd('/');
+  else if(typeof data.cwd==='string'){
+    const id=data.cwd.replace(/^\//,'');
+    setCwd((NODES[id] && NODES[id].state!=='SEALED') ? '/'+id : '/');
+  }
+  // reflect restored state in the UI
+  if(NODES.n_rate.state!=='SEALED') unlockEditor();
+  positionHotzones();
+  setScore(null);                       // refreshes the "best" labels
+  return true;
+}
+function wipeProgress(){
+  try{ localStorage.removeItem(SAVE_KEY); }catch(e){}
+}
+// final safety net — flush progress if the window closes mid-task
+window.addEventListener('beforeunload',saveProgress);
+
 // ---- boot ----------------------------------------------------------
-$('deploy').onclick=()=>{ $('scrim-intro').classList.add('hide');$('termin').focus(); };
+$('deploy').onclick=()=>{ $('scrim-intro').classList.add('hide');$('termin').focus();
+  requestAnimationFrame(relayoutHeart); };
 freshPatient();
+const restored=loadProgress();
+requestAnimationFrame(relayoutHeart);
 tprint('GREYNET link established — contract GN-2241 "Quiet Hours" loaded','ok');
-tprint('type  help  for commands, or  scan  to see the target.','d');
+if(restored){
+  tprint('// progress restored from your last session — type  scan  to review','ok');
+  tprint('// (type  newgame  to wipe the save and start fresh)','d');
+}else{
+  tprint('type  help  for commands, or  scan  to see the target.','d');
+}
+
+// ---- idle heartbeat — the heart ALWAYS beats -----------------------
+// When the routine is running, stepHeart() drives the beat from the
+// player's code. When it is not, this idle loop keeps the patient alive
+// at their resting telemetry so the screen is never dead.
+setInterval(()=>{
+  if(running) return;            // sim owns the beat while a routine runs
+  beatPhase+=hw.bpm/600;
+  drawHeart();
+},55);
 </script>
 </body>
 </html>
