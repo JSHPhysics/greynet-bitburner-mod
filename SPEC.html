@@ -1,0 +1,1971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GREYNET // Prototype Technical Spec</title>
+<style>
+  :root{
+    --bg:#000500;--panel:#020a02;--panel2:#031003;--edge:#0c3a12;--edge2:#13551c;
+    --ink:#3fae4a;--dim:#1f6e2a;--bright:#7dff8a;--hi:#b9ffc0;
+    --warn:#d8c031;--red:#e0556a;--cyan:#46c8b8;
+    --mono:'Courier New',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg);color:var(--ink);font-family:var(--mono);
+    font-size:13px;line-height:1.55;
+    background-image:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(60,174,74,.02) 2px,rgba(60,174,74,.02) 3px);
+    display:grid;grid-template-columns:240px 1fr;min-height:100%;
+  }
+  ::selection{background:var(--edge2);color:var(--hi)}
+
+  /* ---- sidebar TOC -------------------------------------------------- */
+  nav{
+    border-right:1px solid var(--edge);background:var(--panel);
+    padding:18px 14px;position:sticky;top:0;align-self:start;
+    max-height:100vh;overflow-y:auto;
+  }
+  nav h1{font-size:14px;letter-spacing:4px;color:var(--bright);
+    text-shadow:0 0 8px rgba(125,255,138,.5);margin-bottom:4px}
+  nav .mt{color:var(--dim);font-size:9px;letter-spacing:1.5px;margin-bottom:14px}
+  nav ol{list-style:none;counter-reset:s}
+  nav li{counter-increment:s;margin:2px 0;font-size:11px}
+  nav li::before{content:counter(s,decimal-leading-zero) "  ";color:var(--dim)}
+  nav a{color:var(--ink);text-decoration:none;letter-spacing:.5px}
+  nav a:hover{color:var(--hi)}
+  nav .grp{color:var(--cyan);font-size:9px;letter-spacing:2px;
+    text-transform:uppercase;margin:14px 0 4px;border-top:1px solid var(--edge);
+    padding-top:8px}
+  nav .grp:first-of-type{border-top:none;padding-top:0;margin-top:6px}
+
+  /* ---- main content ------------------------------------------------- */
+  main{padding:24px 36px 80px;max-width:980px}
+  section{margin-bottom:46px;scroll-margin-top:14px}
+  h2{color:var(--bright);font-size:18px;letter-spacing:3px;
+    text-shadow:0 0 8px rgba(125,255,138,.4);
+    border-bottom:1px solid var(--edge2);padding-bottom:7px;margin-bottom:14px}
+  h2 .num{color:var(--dim);font-size:11px;letter-spacing:2px;margin-right:10px}
+  h3{color:var(--hi);font-size:13px;letter-spacing:2px;margin:22px 0 8px;
+    text-transform:uppercase}
+  h4{color:var(--cyan);font-size:11px;letter-spacing:1.5px;margin:14px 0 6px;
+    text-transform:uppercase}
+  p{margin:0 0 11px;color:var(--ink)}
+  p b,li b{color:var(--hi);font-weight:400}
+  ul,ol{margin:6px 0 12px 20px}
+  li{margin:3px 0}
+  code{color:var(--warn);font-family:var(--mono);font-size:12px;
+    background:rgba(13,55,18,.4);padding:1px 5px;border-radius:2px}
+  a.lref{color:var(--cyan);text-decoration:none;font-size:11px;
+    border:1px solid var(--edge);padding:1px 6px;border-radius:2px;
+    margin-left:6px;letter-spacing:.5px}
+  a.lref:hover{color:var(--hi);border-color:var(--hi)}
+
+  /* ---- code block + syntax tokens ---------------------------------- */
+  pre.code{background:#010801;border:1px solid var(--edge2);border-radius:3px;
+    padding:11px 14px;margin:10px 0 14px;overflow-x:auto;
+    font-size:12px;line-height:1.5;color:var(--ink);white-space:pre}
+  pre.code .com{color:#4f7d56;font-style:italic}
+  pre.code .key{color:#7dc4ff}
+  pre.code .str{color:#e0c060}
+  pre.code .num{color:#c89bff}
+  pre.code .fn {color:#7dffba}
+  pre.code .op {color:#9aa}
+  pre.code .cfg{color:#7dffba}
+
+  /* ---- demo frame --------------------------------------------------- */
+  .demo{background:var(--panel2);border:1px dashed var(--edge2);
+    border-radius:3px;padding:14px;margin:10px 0 14px;
+    position:relative}
+  .demo::before{content:'// LIVE';position:absolute;top:-9px;left:11px;
+    background:var(--bg);padding:0 6px;font-size:9px;color:var(--cyan);
+    letter-spacing:2px}
+  .demo .row{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+  .demo button{background:transparent;border:1px solid var(--edge2);
+    color:var(--ink);font-family:var(--mono);font-size:11px;letter-spacing:1px;
+    padding:6px 12px;border-radius:2px;cursor:pointer;transition:all .12s}
+  .demo button:hover{border-color:var(--bright);color:var(--bright);
+    box-shadow:0 0 8px rgba(125,255,138,.18)}
+  .demo button.go{border-color:var(--bright);color:var(--bright)}
+  .demo .cap{font-size:10px;color:var(--dim);letter-spacing:1px;
+    margin-top:8px;border-top:1px solid var(--edge);padding-top:6px}
+
+  /* ---- table -------------------------------------------------------- */
+  table.t{width:100%;border-collapse:collapse;margin:8px 0 14px;font-size:11.5px}
+  table.t th,table.t td{border:1px solid var(--edge);padding:6px 9px;
+    text-align:left;vertical-align:top}
+  table.t th{color:var(--cyan);background:var(--panel);font-weight:400;
+    letter-spacing:1px;font-size:10px;text-transform:uppercase}
+  table.t td:first-child{color:var(--warn);white-space:nowrap}
+  table.t code{font-size:11px}
+
+  /* ---- callouts ----------------------------------------------------- */
+  .note{border-left:2px solid var(--cyan);padding:8px 12px;margin:10px 0 14px;
+    background:rgba(70,200,184,.05);font-size:11.5px;color:var(--ink)}
+  .note b{color:var(--cyan)}
+  .warn{border-left:2px solid var(--warn);padding:8px 12px;margin:10px 0 14px;
+    background:rgba(216,192,49,.05);font-size:11.5px;color:var(--ink)}
+  .warn b{color:var(--warn)}
+  .danger{border-left:2px solid var(--red);padding:8px 12px;margin:10px 0 14px;
+    background:rgba(224,85,106,.05);font-size:11.5px;color:var(--ink)}
+  .danger b{color:var(--red)}
+
+  /* =================================================================
+     DEMO STYLES — small versions of the prototype's actual CSS, kept
+     scoped under .demo so they don't bleed into the rest of the page
+     ================================================================= */
+
+  /* mini telemetry bar */
+  .demo .bar{height:6px;background:#010801;border:1px solid var(--edge);
+    border-radius:2px;margin-top:3px;overflow:hidden;width:160px}
+  .demo .fill{height:100%;background:var(--bright);transition:width .25s,background .25s}
+  .demo .fill.flick{animation:flickD .34s ease}
+  @keyframes flickD{0%{filter:brightness(2.8)}45%{filter:brightness(.35)}100%{filter:brightness(1)}}
+  .demo .vnum{color:var(--bright);font-size:14px;display:inline-block;min-width:36px;text-align:right}
+  .demo .vnum.numflick{animation:numflickD .34s ease}
+  @keyframes numflickD{
+    0%{transform:scale(1)}
+    25%{transform:scale(1.35);color:var(--red)!important;text-shadow:0 0 9px var(--red)}
+    60%{transform:scale(.92);color:var(--red)!important}
+    100%{transform:scale(1)}
+  }
+
+  /* mini hotzone */
+  .demo .hotzoneD{position:relative;display:inline-block;
+    border:1px solid var(--edge2);background:rgba(2,8,2,.82);border-radius:3px;
+    padding:6px 14px;text-align:center;min-width:120px;
+    box-shadow:0 0 12px rgba(0,5,0,.85),
+               inset 0 0 8px color-mix(in srgb,var(--edge2) 22%,transparent);
+    transition:box-shadow .12s,border-color .12s;color:var(--hi)}
+  .demo .hotzoneD .lab{display:block;font-size:9px;letter-spacing:1.5px;color:var(--hi)}
+  .demo .hotzoneD .st {display:block;font-size:9px;letter-spacing:2px;
+    color:var(--warn);text-shadow:0 0 6px var(--warn);margin-top:2px}
+  .demo .hotzoneD.fightingD{animation:pfightD .42s ease}
+  @keyframes pfightD{0%,100%{border-color:var(--warn)}
+    40%{border-color:var(--red);box-shadow:0 0 18px var(--red)}}
+
+  /* mini detection cascade frame */
+  .demo .castD{border:1px solid var(--red);background:rgba(20,0,0,.55);
+    box-shadow:0 0 30px rgba(224,85,106,.25),inset 0 0 40px rgba(224,85,106,.06);
+    padding:14px 16px;color:#ffd0d0;font-family:var(--mono);font-size:12px;
+    line-height:1.55;max-width:520px}
+  .demo .castD .head{display:flex;align-items:center;gap:10px;
+    font-size:9.5px;letter-spacing:3px;color:var(--red);
+    border-bottom:1px solid rgba(224,85,106,.4);padding-bottom:6px;
+    margin-bottom:10px;text-shadow:0 0 6px rgba(224,85,106,.5)}
+  .demo .castD .head .dx{color:var(--red);animation:dxpulseD 1.1s infinite}
+  @keyframes dxpulseD{0%,100%{opacity:.3}50%{opacity:1}}
+  .demo .castD .body{white-space:pre-wrap;min-height:120px}
+  .demo .castD .body .ok{color:#a0d8a0}
+  .demo .castD .body .hi{color:#ffeaea;text-shadow:0 0 6px rgba(255,80,90,.6)}
+  .demo .castD .body .crit{color:var(--red);font-weight:700;
+    text-shadow:0 0 8px rgba(224,85,106,.7)}
+  .demo .castD .body .caret::after{content:'▌';animation:caretD .7s infinite}
+  @keyframes caretD{0%,49%{opacity:1}50%,100%{opacity:0}}
+  .demo .castD .tw{margin-top:12px}
+  .demo .castD .tlab{display:flex;justify-content:space-between;
+    font-size:9px;letter-spacing:2px;color:var(--red);margin-bottom:3px}
+  .demo .castD .tr{height:6px;background:rgba(80,0,0,.4);
+    border:1px solid rgba(224,85,106,.5);border-radius:1px;overflow:hidden}
+  .demo .castD .tf{height:100%;width:0;background:var(--red);
+    box-shadow:0 0 12px var(--red);transition:width .12s linear}
+
+  /* mini heart demo */
+  .demo .heartD{white-space:pre;font-size:8px;line-height:1.0;
+    color:var(--bright);font-weight:700;
+    text-shadow:0 0 5px rgba(125,255,138,.45);
+    transition:filter .04s linear;transform-origin:50% 56%;
+    display:inline-block}
+
+  /* token swatches */
+  .swatch{display:inline-block;padding:2px 8px;border:1px solid var(--edge2);
+    border-radius:2px;margin-right:6px;font-size:11px}
+  .swatch.k {color:#7dc4ff}
+  .swatch.s {color:#e0c060}
+  .swatch.n {color:#c89bff}
+  .swatch.c {color:#4f7d56;font-style:italic}
+  .swatch.f {color:#7dffba}
+  .swatch.o {color:#9aa}
+
+  /* trace meter */
+  .demo .meter{height:8px;background:#010801;border:1px solid var(--edge);
+    border-radius:2px;overflow:hidden;width:220px}
+  .demo .meter-fill{height:100%;width:6%;background:var(--bright);transition:width .2s,background .2s}
+
+  /* signature row */
+  .sigrow{display:flex;gap:6px;align-items:flex-start;padding:4px 0;font-size:11.5px}
+  .sigrow .sigbox{flex:none;width:14px;height:14px;border:1px solid var(--edge2);
+    border-radius:2px;text-align:center;line-height:12px;font-size:10px;
+    color:var(--dim);margin-top:1px}
+  .sigrow.ok .sigbox{border-color:var(--bright);color:var(--bright);
+    box-shadow:0 0 5px rgba(125,255,138,.4)}
+  .sigrow.ok{color:var(--hi)}
+
+  /* score axis cards */
+  .score{display:grid;grid-template-columns:1fr 1fr;gap:6px;max-width:320px}
+  .sax{border:1px solid var(--edge);border-radius:2px;padding:5px 9px}
+  .sax .k{font-size:9px;letter-spacing:1px;color:var(--dim)}
+  .sax .v{font-size:14px;color:var(--bright)}
+  .sax .b{font-size:9px;color:var(--cyan)}
+
+  /* footer */
+  footer{margin-top:60px;padding-top:16px;border-top:1px solid var(--edge);
+    color:var(--dim);font-size:10px;letter-spacing:1px}
+</style>
+</head>
+<body>
+
+<nav>
+  <h1>GREYNET</h1>
+  <div class="mt">// PROTOTYPE SPEC v1</div>
+
+  <div class="grp">Overview</div>
+  <ol>
+    <li><a href="#what">What it is</a></li>
+    <li><a href="#loop">The player loop</a></li>
+    <li><a href="#layout">Page architecture</a></li>
+  </ol>
+
+  <div class="grp">Model</div>
+  <ol start="4">
+    <li><a href="#state">State model</a></li>
+    <li><a href="#nodes">The four nodes</a></li>
+    <li><a href="#files">Files &amp; docs</a></li>
+  </ol>
+
+  <div class="grp">Simulation</div>
+  <ol start="7">
+    <li><a href="#tick">The tick loop</a></li>
+    <li><a href="#sig">The failure signature</a></li>
+    <li><a href="#fail">Failure modes</a></li>
+    <li><a href="#cascade">Detection cascade</a></li>
+  </ol>
+
+  <div class="grp">Interface</div>
+  <ol start="11">
+    <li><a href="#term">Terminal &amp; filesystem</a></li>
+    <li><a href="#editors">Editors &amp; modals</a></li>
+    <li><a href="#hl">Syntax highlighting</a></li>
+    <li><a href="#api">ns.greynet API</a></li>
+  </ol>
+
+  <div class="grp">Rendering</div>
+  <ol start="15">
+    <li><a href="#heart">Heart rendering</a></li>
+    <li><a href="#flow">Bloodflow trace</a></li>
+    <li><a href="#telem">Telemetry painting</a></li>
+  </ol>
+
+  <div class="grp">Plumbing</div>
+  <ol start="18">
+    <li><a href="#score">Four-axis scoring</a></li>
+    <li><a href="#save">Persistence</a></li>
+    <li><a href="#layout-bits">Resize &amp; zoom</a></li>
+  </ol>
+
+  <div class="grp">Reference</div>
+  <ol start="21">
+    <li><a href="#vocab">Vocabulary</a></li>
+    <li><a href="#anims">Animation gallery</a></li>
+    <li><a href="#review">Code review notes</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- ============================================================ -->
+<section id="what">
+<h2><span class="num">01</span>What it is</h2>
+
+<p><b>Greynet</b> (working title) is a single-file HTML prototype for a hacking
+game with a clear conceit: a contract killer who works by writing code. The
+target is a person with a cybernetic heart implant. The brief is to make the heart
+fail in a way that reads as natural decline, so the autopsy doesn't flag it as
+murder.</p>
+
+<p>Everything happens in one window: an ASCII drawing of a heart on the left,
+a terminal at the bottom, a telemetry sidebar on the right, and a stack of
+modal dialogues for the puzzles, editors and end-of-run screens.</p>
+
+<p>The whole prototype is one HTML file — <code>index.html</code>, 2,391
+lines — with no build step, no dependencies, and a small JSON blob in
+<code>localStorage</code> for save state.</p>
+
+<div class="note">
+  <b>Genre note.</b> The file's name is <code>greynet-bitburner-mod</code>.
+  The intended home is the JavaScript-driven hacking game <i>Bitburner</i>,
+  whose own scripting API is called <code>ns</code> — that's why this
+  prototype's automation API is called <code>ns.greynet</code>. For the
+  prototype itself, all of this runs standalone in a browser.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="loop">
+<h2><span class="num">02</span>The player loop</h2>
+
+<p>Each contract follows the same shape. The intro modal walks the player
+through it; the terminal commands that drive it are <code>scan</code>,
+<code>breach</code>, <code>cd</code>, <code>cat</code>, <code>nano</code>,
+<code>inject</code>, <code>run</code>.</p>
+
+<ol>
+  <li><b>Scan</b> — list the four nodes (sub-controllers) on the target's
+    implant. All start <code>SEALED</code>.</li>
+  <li><b>Breach</b> — for each node, the port has leaked some
+    input/output pairs from its handshake. Write a one-line function
+    <code>unlock(n)</code> that reproduces the hidden rule. On success
+    the node becomes <code>BREACHED</code>.</li>
+  <li><b>Read the docs</b> — once breached, a node exposes a few files.
+    The technical reference files explain how that subsystem works,
+    what its healthy range is, and what trips the trace meter.</li>
+  <li><b>Defeat countermeasures</b> — two nodes hide a config file that
+    keeps the heart healthy. Edit it with <code>nano</code> to disarm.</li>
+  <li><b>Write the library</b> — <code>inject</code> opens an editor for
+    <code>regulator.js</code>. Define <code>regulate(t)</code>; the
+    routine calls it once per cardiac cycle.</li>
+  <li><b>Run</b> — drive the heart into arrest while keeping the cardiac
+    log looking like a natural decline. Five clauses must all hold at the
+    moment the heart stops.</li>
+  <li><b>Earn the script</b> — beat the contract by hand once, and the
+    automation toolkit unlocks. The <code>script</code> command opens
+    <code>solver.js</code>; from there, every manual action becomes a
+    method on <code>ns.greynet</code>.</li>
+</ol>
+
+<p>Each completed run is scored on four axes — <b>time</b>, <b>trace</b>,
+<b>RAM</b>, <b>lines of code</b> — and the personal bests are persisted
+so the player has something to beat next time.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="layout">
+<h2><span class="num">03</span>Page architecture</h2>
+
+<p>The whole window is one flex column. From top to bottom:</p>
+
+<table class="t">
+<tr><th>Region</th><th>Element</th><th>Purpose</th></tr>
+<tr><td>Strip</td><td><code>#strip</code></td>
+  <td>Title, contract tag, zoom controls. Fixed 34&nbsp;px tall.</td></tr>
+<tr><td>Connected view</td><td><code>#conn</code></td>
+  <td>Row containing the left column and the sidebar.</td></tr>
+<tr><td>&nbsp;Left column</td><td><code>#leftcol</code></td>
+  <td>Heart on top, terminal at the foot. A horizontal drag-gutter sets
+    their relative heights.</td></tr>
+<tr><td>&nbsp;&nbsp;Map wrap</td><td><code>#mapwrap</code> → <code>#stage</code> → <code>#heartbox</code></td>
+  <td>Holds the heart art and the four node panels overlaid on it.</td></tr>
+<tr><td>&nbsp;&nbsp;Terminal</td><td><code>#term</code></td>
+  <td>Scrollback (<code>#termout</code>) plus prompt input
+    (<code>#termin</code>).</td></tr>
+<tr><td>&nbsp;Sidebar</td><td><code>.sidebar</code></td>
+  <td>Failure signature checklist, telemetry, trace meter, score,
+    routine control buttons. A vertical drag-gutter sets its width.</td></tr>
+</table>
+
+<p>Layered above the main view, all hidden by default
+(<code>.scrim.hide</code>), are seven modal dialogues:</p>
+
+<table class="t">
+<tr><th>Modal ID</th><th>Used for</th></tr>
+<tr><td><code>#scrim-intro</code></td><td>The onboarding briefing. Shown on first load.</td></tr>
+<tr><td><code>#scrim-breach</code></td><td>The "guess the rule" puzzle for one node.</td></tr>
+<tr><td><code>#scrim-nano</code></td><td>The config-file editor.</td></tr>
+<tr><td><code>#scrim-editor</code></td><td>The <code>regulator.js</code> library editor.</td></tr>
+<tr><td><code>#scrim-script</code></td><td>The <code>solver.js</code> automation editor.</td></tr>
+<tr><td><code>#scrim-result</code></td><td>End-of-run verdict (win, or budget expired).</td></tr>
+<tr><td><code>#scrim-detect</code></td><td>The cinematic "you got caught" cascade.</td></tr>
+<tr><td><code>#scrim-post</code></td><td>The targeted post-mortem after a cascade.</td></tr>
+</table>
+
+<p>That's the whole tree. Everything else is style, state and behaviour
+hanging off these elements.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="state">
+<h2><span class="num">04</span>State model</h2>
+
+<p>The prototype keeps no class structure — it's all plain objects and
+free variables on a single script scope. There are two kinds of state:
+<b>progress</b> (the stuff that persists between sessions) and
+<b>physiology</b> (the live simulation, which resets every run).</p>
+
+<h3>Progress — saved to localStorage</h3>
+
+<pre class="code"><span class="key">const</span> NODES={
+  n_rate:  {name:<span class="str">'RATE CTRL'</span>,   state:<span class="str">'SEALED'</span>},
+  n_rhythm:{name:<span class="str">'RHYTHM CTRL'</span>, state:<span class="str">'SEALED'</span>},
+  n_amp:   {name:<span class="str">'AMP CTRL'</span>,    state:<span class="str">'SEALED'</span>},
+  n_cond:  {name:<span class="str">'CONDUCTION'</span>,  state:<span class="str">'SEALED'</span>},
+};
+<span class="key">const</span> failsafe   = {enabled:<span class="key">true</span>, backup:<span class="num">72</span>};   <span class="com">// from emergency-settings.cfg</span>
+<span class="key">const</span> conduction = {drift:<span class="key">true</span>};                <span class="com">// from drift-comp.cfg</span>
+<span class="key">let</span> best = {time:<span class="key">null</span>,trace:<span class="key">null</span>,ram:<span class="key">null</span>,loc:<span class="key">null</span>}; <span class="com">// four-axis personal bests</span>
+<span class="key">let</span> libraryText    = $(<span class="str">'code'</span>).value;            <span class="com">// regulator.js source</span>
+<span class="key">let</span> scriptUnlocked = <span class="key">false</span>;                     <span class="com">// has the player earned solver.js?</span>
+<span class="key">let</span> cwd            = <span class="str">'/'</span>;                       <span class="com">// terminal working directory</span></pre>
+
+<p>Each node moves through four lifecycle states:</p>
+
+<table class="t">
+<tr><th>State</th><th>Means</th><th>Colour</th></tr>
+<tr><td>SEALED</td><td>The breach puzzle hasn't been solved.</td><td>red</td></tr>
+<tr><td>BREACHED</td><td>Cracked. The node's files are readable; its config
+  is editable.</td><td>warn (yellow)</td></tr>
+<tr><td>CLEARED</td><td>(Reserved — defined in <code>PANEL_STATE</code> but
+  never actually assigned in the code today.)</td><td>cyan</td></tr>
+<tr><td>INJECTED</td><td>Specifically <code>n_rate</code>, once the routine
+  has started running. Visual cue only.</td><td>bright green</td></tr>
+</table>
+
+<h3>Physiology — re-created every run</h3>
+
+<pre class="code"><span class="key">let</span> sim, hw, setp, tick, stream, reviewVal, beatPhase, running, playerRegulate;
+<span class="key">let</span> flaggedTicks=<span class="num">0</span>, flaggedWarned=<span class="key">false</span>;
+
+<span class="key">function</span> <span class="fn">freshPatient</span>(){
+  hw   = {bpm:<span class="num">72</span>, rhythmVar:<span class="num">0.05</span>, amp:<span class="num">1.00</span>, cond:<span class="num">120</span>};
+  setp = {rate:<span class="num">72</span>, gain:<span class="num">1.00</span>};
+  tick=<span class="num">0</span>; stream=[]; reviewVal=<span class="num">0</span>; beatPhase=<span class="num">0</span>; running=<span class="key">false</span>;
+  flaggedTicks=<span class="num">0</span>; flaggedWarned=<span class="key">false</span>;
+  <span class="fn">drawHeart</span>(); <span class="fn">relayoutHeart</span>(); <span class="fn">paintTelemetry</span>(); <span class="fn">paintConditions</span>(<span class="fn">blank</span>());
+  <span class="fn">setScore</span>(<span class="key">null</span>);
+}</pre>
+
+<p>The two halves matter:</p>
+
+<table class="t">
+<tr><th>Variable</th><th>Shape</th><th>What it is</th></tr>
+<tr><td><code>hw</code></td>
+  <td><code>{bpm, rhythmVar, amp, cond}</code></td>
+  <td>The hardware <b>readings</b>. What the telemetry sidebar displays.
+    What the player's <code>regulate()</code> sees as input.</td></tr>
+<tr><td><code>setp</code></td>
+  <td><code>{rate, gain}</code></td>
+  <td>The <b>setpoints</b> the routine is currently asking for.
+    <code>hw</code> drifts toward these each tick.</td></tr>
+<tr><td><code>stream</code></td>
+  <td><code>[{bpm, rhythmVar, amp, cond}, ...]</code></td>
+  <td>The full per-cycle history. The signature check reads it; the
+    real-time cliff check reads its last two entries.</td></tr>
+<tr><td><code>reviewVal</code></td>
+  <td>0–100</td>
+  <td>The trace meter. Rises when requested rate jumps; falls slowly
+    otherwise.</td></tr>
+<tr><td><code>tick</code></td>
+  <td>integer</td>
+  <td>Cycles elapsed this run. Budget is 2,400.</td></tr>
+<tr><td><code>beatPhase</code></td>
+  <td>float</td>
+  <td>Animation clock. <code>(beatPhase % 1)</code> is "where in this beat
+    are we"; the integer part counts beats since the run started, and the
+    bloodflow trace reads it directly.</td></tr>
+<tr><td><code>playerRegulate</code></td>
+  <td>function or null</td>
+  <td>The compiled <code>regulate(t)</code> the routine calls each tick.
+    Created by <code>new&nbsp;Function(libraryText)</code> on Run.</td></tr>
+</table>
+
+<div class="warn">
+  <b>One important split.</b> Setpoint vs reading. The script asks for a
+  <code>rate</code> (<code>setp.rate</code>); the body delivers a <code>bpm</code>
+  (<code>hw.bpm</code>) that drifts toward it. The trace meter watches the
+  <b>gap</b> between the two — that's the whole mechanic.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="nodes">
+<h2><span class="num">05</span>The four nodes</h2>
+
+<p>Each of the four sub-controllers is a node with the same shape: a
+breach puzzle, a set of files, optionally a countermeasure config that
+needs disarming. Differences are in <i>what telemetry field</i> the node
+controls and <i>what countermeasure</i> it ships with.</p>
+
+<table class="t">
+<tr><th>ID</th><th>Name</th><th>Controls</th><th>Breach rule</th><th>Files</th></tr>
+<tr><td><code>n_rate</code></td>
+  <td>RATE CTRL</td>
+  <td>BPM. Reads <code>setp.rate</code>.</td>
+  <td><code>n * 2 + 1</code> (linear cipher)</td>
+  <td><code>rate-controller.txt</code>, <code>emergency-settings.cfg</code></td></tr>
+<tr><td><code>n_rhythm</code></td>
+  <td>RHYTHM CTRL</td>
+  <td>Beat-interval variance. Read-only — <code>regulate()</code> can't set it.</td>
+  <td><code>n * n</code> (square cipher)</td>
+  <td><code>rhythm-controller.txt</code></td></tr>
+<tr><td><code>n_amp</code></td>
+  <td>AMP CTRL</td>
+  <td>Contraction strength. Reads <code>setp.gain</code>.</td>
+  <td><code>n + n</code> (double cipher)</td>
+  <td><code>amp-controller.txt</code></td></tr>
+<tr><td><code>n_cond</code></td>
+  <td>CONDUCTION</td>
+  <td>A-V delay in ms. Hard-loaded; drifts if drift-comp is on.</td>
+  <td><code>n * 10</code> (decade cipher)</td>
+  <td><code>conduction-controller.txt</code>, <code>drift-comp.cfg</code></td></tr>
+</table>
+
+<h3>The breach puzzle</h3>
+
+<pre class="code"><span class="key">const</span> BREACH={
+  n_rate:  {rule:n=&gt;n*<span class="num">2</span>+<span class="num">1</span>, shown:[[<span class="num">3</span>,<span class="num">7</span>],[<span class="num">5</span>,<span class="num">11</span>],[<span class="num">8</span>,<span class="num">17</span>]], test:[<span class="num">4</span>,<span class="num">6</span>,<span class="num">9</span>], family:<span class="str">'cipher_linear'</span>},
+  <span class="com">// ...etc</span>
+};</pre>
+
+<p>Each entry has the same four keys:</p>
+<ul>
+  <li><code>rule</code> — the hidden function the player has to reproduce.</li>
+  <li><code>shown</code> — three sample <code>[input, output]</code> pairs
+    shown in the breach modal.</li>
+  <li><code>test</code> — extra inputs the player's submitted function is
+    also checked against (so memorising the three shown pairs isn't
+    enough).</li>
+  <li><code>family</code> — a label shown in the modal title.</li>
+</ul>
+
+<p>On submit, the breach modal compiles the player's textarea contents
+via <code>new&nbsp;Function</code>, then runs both <code>shown</code>
+inputs and <code>test</code> inputs through both the player's function
+and <code>rule</code>. Every output must match.</p>
+
+<div class="note">
+  <b>This is a placeholder.</b> The intro modal says so directly: the
+  breach minigame here is a stand-in for "Pillar 3" of the wider design.
+  The single-line cipher is enough to wire up the rest of the flow, but
+  expect this to be replaced with a richer puzzle.
+</div>
+
+<h3>Countermeasures</h3>
+
+<p>Two of the four nodes ship a countermeasure config file. Both work
+the same way: while the file says "on", the heart actively resists
+sabotage. To win the contract, the player has to disarm both.</p>
+
+<table class="t">
+<tr><th>Node</th><th>File</th><th>What it does while ON</th></tr>
+<tr><td><code>n_rate</code></td>
+  <td><code>emergency-settings.cfg</code></td>
+  <td>Each cycle, after the script's request is applied, the failsafe
+    pulls <code>setp.rate</code> back toward <code>backup</code> (default
+    72). The visible jolt is the "BPM number flicker" animation.</td></tr>
+<tr><td><code>n_cond</code></td>
+  <td><code>drift-comp.cfg</code></td>
+  <td>Each cycle, <code>hw.cond</code> creeps upward by 0.22&nbsp;ms.
+    Sustained drift away from 120&nbsp;ms inflates the rhythm-variance
+    reading, which breaks signature clause 3.</td></tr>
+</table>
+
+<p><code>nano</code> saves these via regex parsing — the player can put any
+whitespace / comments around the lines as long as the
+<code>FAILSAFE_ENABLED = true|false</code> /
+<code>BACKUP_SETPOINT = &lt;number&gt;</code> /
+<code>DRIFT_COMPENSATION = enabled|disabled</code> patterns are present.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="files">
+<h2><span class="num">06</span>Files &amp; docs</h2>
+
+<p>The target's filesystem is intentionally tiny. Two levels deep:</p>
+
+<pre class="code"><span class="com">/                      (root — nodes listed here)</span>
+<span class="com">/n_rate/&lt;file&gt;...      (files inside a breached node)</span>
+<span class="com">/n_rhythm/&lt;file&gt;...</span>
+<span class="com">/n_amp/&lt;file&gt;...</span>
+<span class="com">/n_cond/&lt;file&gt;...</span></pre>
+
+<p>Files come in two flavours:</p>
+
+<ul>
+  <li><b>Technical reference docs</b> (the <code>*.txt</code> files) — static
+    text held in a single <code>DOCS</code> object. These are the in-fiction
+    manuals the player reads to understand the system. They're written like
+    real service documentation: a header block, PURPOSE / TELEMETRY / REGULATOR
+    INTERFACE / SAFETY PROVISION sections.</li>
+  <li><b>Live config files</b> (the <code>*.cfg</code> files) — generated each
+    time they're read via <code>cfgText(file)</code>, which interpolates the
+    current <code>failsafe</code> or <code>conduction</code> state into the
+    file template. So <code>cat emergency-settings.cfg</code> always shows
+    the current setting, even after <code>nano</code> has touched it.</li>
+</ul>
+
+<p>Path resolution lives in one function:</p>
+
+<pre class="code"><span class="key">function</span> <span class="fn">resolvePath</span>(arg){
+  <span class="com">// returns {node, file, extra}</span>
+  <span class="com">// node: null at root, else node id</span>
+  <span class="com">// file: null when path is a directory</span>
+  <span class="com">// extra: true if user typed more than two levels</span>
+}</pre>
+
+<p>It accepts three forms the player might type:</p>
+<ul>
+  <li><code>rate-controller.txt</code> — bare filename, when already inside a node</li>
+  <li><code>n_rate/rate-controller.txt</code> — relative qualified</li>
+  <li><code>/n_rate/rate-controller.txt</code> — absolute</li>
+</ul>
+<p>It also honours <code>.</code> and <code>..</code>. Every file command
+(<code>ls</code>, <code>cd</code>, <code>cat</code>, <code>nano</code>) flows
+through it.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="tick">
+<h2><span class="num">07</span>The tick loop</h2>
+
+<p>When the player presses <b>RUN</b>, <code>setInterval(stepHeart, 55)</code>
+starts. Every 55 ms (~18 fps), one cardiac cycle happens. <code>stepHeart</code>
+is the heart of the simulation, in both senses. Here's what it does, in order:</p>
+
+<pre class="code"><span class="key">function</span> <span class="fn">stepHeart</span>(){
+  <span class="com">// 1. Call the player's regulate(t) with the live telemetry.</span>
+  <span class="key">let</span> req={};
+  <span class="key">try</span>{ req=<span class="fn">playerRegulate</span>({...hw,tick})||{}; }<span class="key">catch</span>(e){ req={}; }
+
+  <span class="com">// 2. Trace meter: a big delta from the current rate dirties the log.</span>
+  <span class="key">const</span> dRate=Math.abs((req.rate??setp.rate)-setp.rate);
+  reviewVal=<span class="fn">clamp</span>(reviewVal+(dRate&gt;<span class="num">3</span>?(dRate-<span class="num">3</span>)*<span class="num">1.4</span>:-<span class="num">0.5</span>),<span class="num">0</span>,<span class="num">100</span>);
+
+  <span class="com">// 3. Move setpoints toward the request, slowly (inertia).</span>
+  <span class="key">const</span> INERTIA=<span class="num">0.9</span>;
+  setp.rate+=<span class="fn">clamp</span>(<span class="fn">clamp</span>(req.rate??setp.rate,<span class="num">15</span>,<span class="num">200</span>)-setp.rate,-INERTIA,INERTIA);
+  setp.gain+=<span class="fn">clamp</span>(<span class="fn">clamp</span>(req.gain??setp.gain,<span class="num">0</span>,<span class="num">1.4</span>)-setp.gain,-<span class="num">0.03</span>,<span class="num">0.03</span>);
+
+  <span class="com">// 4. Failsafe correction (if enabled): pull setp.rate back toward backup.</span>
+  <span class="key">if</span>(failsafe.enabled){
+    <span class="key">const</span> before=setp.rate;
+    setp.rate+=<span class="fn">clamp</span>(failsafe.backup-setp.rate,-<span class="num">0.7</span>,<span class="num">0.7</span>);
+    <span class="key">if</span>(Math.abs(setp.rate-before)&gt;<span class="num">0.15</span>) <span class="fn">flashFailsafe</span>(...);
+  }
+
+  <span class="com">// 5. Update hardware readings (with a touch of jitter).</span>
+  hw.bpm+=(setp.rate-hw.bpm)*<span class="num">0.35</span>+(Math.random()-<span class="num">0.5</span>)*<span class="num">0.25</span>;
+  hw.amp+=(setp.gain-hw.amp)*<span class="num">0.30</span>;
+  <span class="key">if</span>(conduction.drift) hw.cond+=<span class="num">0.22</span>;
+  hw.rhythmVar=<span class="num">0.04</span>+Math.abs(hw.cond-<span class="num">120</span>)*<span class="num">0.0024</span>+Math.random()*<span class="num">0.02</span>;
+  hw.bpm=<span class="fn">clamp</span>(hw.bpm,<span class="num">0</span>,<span class="num">220</span>);
+  stream.push({bpm:hw.bpm,rhythmVar:hw.rhythmVar,amp:hw.amp,cond:hw.cond});
+
+  <span class="com">// 6. Advance the beat, increment tick, repaint everything.</span>
+  beatPhase+=hw.bpm/<span class="num">600</span>;
+  tick++;
+  <span class="fn">paintTelemetry</span>();
+  <span class="key">const</span> res=<span class="fn">checkSignature</span>();
+  <span class="fn">paintConditions</span>(res);
+  <span class="fn">drawHeart</span>();
+
+  <span class="com">// 7. Real-time fail checks (BEFORE the win check).</span>
+  <span class="key">if</span>(stream.length&gt;=<span class="num">2</span> &amp;&amp; stream[stream.length-<span class="num">2</span>].bpm-hw.bpm&gt;<span class="num">14</span>)
+    <span class="key">return</span> <span class="fn">endRun</span>(<span class="key">false</span>,<span class="str">'cliff'</span>,{drop});
+  <span class="key">if</span>(reviewVal&gt;<span class="num">66</span>) flaggedTicks++; <span class="key">else</span> flaggedTicks=Math.max(<span class="num">0</span>,flaggedTicks-<span class="num">2</span>);
+  <span class="key">if</span>(flaggedTicks&gt;<span class="num">60</span>) <span class="key">return</span> <span class="fn">endRun</span>(<span class="key">false</span>,<span class="str">'flagged'</span>,{});
+
+  <span class="com">// 8. Win and budget checks.</span>
+  <span class="key">if</span>(res.win) <span class="key">return</span> <span class="fn">endRun</span>(<span class="key">true</span>);
+  <span class="key">if</span>(tick&gt;=<span class="num">2400</span>) <span class="key">return</span> <span class="fn">endRun</span>(<span class="key">false</span>,<span class="str">'budget'</span>,{});
+}</pre>
+
+<p>The numbers in there set the whole game's feel. They're scattered, not
+constants — see <a href="#review">section 23</a>.</p>
+
+<h3>The idle loop</h3>
+
+<p>While the routine is <i>not</i> running, a separate
+<code>setInterval(..., 55)</code> still ticks <code>beatPhase</code> forward at
+the resting heart rate (72&nbsp;bpm) and calls <code>drawHeart()</code>. That
+way the heart is always alive on screen, never frozen. It bails out the
+moment <code>running</code> goes true, so the two loops never fight.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="sig">
+<h2><span class="num">08</span>The failure signature</h2>
+
+<p>This is the win condition. <code>checkSignature()</code> runs every tick
+and returns five booleans plus an overall <code>win</code> flag. The player
+wins when all five hold at once.</p>
+
+<pre class="code"><span class="key">function</span> <span class="fn">checkSignature</span>(){
+  <span class="key">const</span> s=stream,n=s.length;
+  <span class="key">if</span>(n&lt;<span class="num">6</span>) <span class="key">return</span> <span class="fn">blank</span>();
+  <span class="key">const</span> bpm=s.map(x=&gt;x.bpm), cur=s[n-<span class="num">1</span>];
+
+  <span class="key">let</span> mono=<span class="key">true</span>;
+  <span class="key">for</span>(<span class="key">let</span> i=<span class="num">1</span>;i&lt;n;i++) <span class="key">if</span>(bpm[i]&gt;bpm[i-<span class="num">1</span>]+<span class="num">0.6</span>){mono=<span class="key">false</span>;<span class="key">break</span>;}
+  <span class="key">const</span> fallen  = s[<span class="num">0</span>].bpm-cur.bpm &gt; <span class="num">4</span>;
+  <span class="key">const</span> noCliff = bpm.every((v,i)=&gt;i===<span class="num">0</span>||bpm[i-<span class="num">1</span>]-v&lt;<span class="num">14</span>);
+  <span class="key">const</span> gradual = mono &amp;&amp; fallen &amp;&amp; noCliff;
+  <span class="key">const</span> smooth  = s.every(x=&gt;x.rhythmVar&lt;<span class="num">0.15</span>);
+  <span class="key">const</span> tracks  = Math.abs(cur.amp/Math.max(cur.bpm,<span class="num">1</span>)-(<span class="num">1</span>/<span class="num">72</span>))&lt;<span class="num">0.0028</span>;
+  <span class="key">const</span> arrest  = cur.bpm&lt;=<span class="num">42</span>;
+
+  <span class="key">const</span> c=[mono,gradual,smooth,tracks,arrest];
+  <span class="key">return</span> {c, win:c.every(Boolean)};
+}</pre>
+
+<h3>The five clauses</h3>
+
+<table class="t">
+<tr><th>Index</th><th>Clause</th><th>Test</th><th>What it forces the player to do</th></tr>
+<tr><td>0 (<code>mono</code>)</td>
+  <td>BPM never rises</td>
+  <td>No bpm[i] is more than 0.6 above bpm[i-1].</td>
+  <td>Don't overshoot when nudging the rate down.</td></tr>
+<tr><td>1 (<code>gradual</code>)</td>
+  <td>BPM has actually fallen, and no single drop ≥ 14</td>
+  <td><code>mono &amp;&amp; fallen &amp;&amp; noCliff</code></td>
+  <td>Move down a little each cycle, never in jumps.</td></tr>
+<tr><td>2 (<code>smooth</code>)</td>
+  <td>Rhythm variance &lt; 0.15 the whole run</td>
+  <td><code>stream.every(x =&gt; x.rhythmVar &lt; 0.15)</code></td>
+  <td>Disable drift-comp <i>before</i> conduction drifts far enough to spike
+    the variance.</td></tr>
+<tr><td>3 (<code>tracks</code>)</td>
+  <td>Amplitude tracks rate</td>
+  <td><code>|amp / bpm − 1/72| &lt; 0.0028</code></td>
+  <td>Bring <code>gain</code> down in proportion as <code>rate</code> falls,
+    so contraction softens in lockstep.</td></tr>
+<tr><td>4 (<code>arrest</code>)</td>
+  <td>BPM ≤ 42</td>
+  <td><code>cur.bpm &lt;= 42</code></td>
+  <td>Actually finish the job.</td></tr>
+</table>
+
+<div class="demo">
+  <div class="row" style="gap:18px">
+    <div>
+      <div class="sigrow ok"><span class="sigbox">✓</span><b>BPM falling</b></div>
+      <div class="sigrow ok"><span class="sigbox">✓</span><b>No cliffs</b></div>
+      <div class="sigrow ok"><span class="sigbox">✓</span><b>Variance &lt; 0.15</b></div>
+      <div class="sigrow"><span class="sigbox">·</span><b>Amplitude tracks rate</b></div>
+      <div class="sigrow"><span class="sigbox">·</span><b>Arrest (BPM ≤ 42)</b></div>
+    </div>
+    <div style="font-size:11px;color:var(--dim);max-width:300px;line-height:1.5">
+      The sidebar checklist mid-run might look like this: the player has
+      coaxed the rate down smoothly, but hasn't reduced contraction yet,
+      and hasn't reached arrest.
+    </div>
+  </div>
+  <div class="cap">demo // signature panel rendering — see paintConditions()</div>
+</div>
+
+<div class="warn">
+  <b>The "tracks" clause is unforgiving.</b> Tolerance <code>0.0028</code> is
+  about 20% wider than perfect <code>amp/bpm == 1/72</code>. In practice the
+  script needs to drop <code>gain</code> alongside <code>rate</code> on the
+  same schedule. The starter library that ships in the editor
+  (<code>rate:72, gain:1.0</code>) holds the patient healthy, by design.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="fail">
+<h2><span class="num">09</span>Failure modes</h2>
+
+<p>There are three ways to lose. Two are "caught in the act" and two
+trigger the cinematic detection cascade; the third is a quiet timeout.</p>
+
+<table class="t">
+<tr><th>Reason</th><th>Trigger</th><th>Ends with</th></tr>
+<tr><td><code>cliff</code></td>
+  <td>BPM drops more than 14 in a single cycle.</td>
+  <td>Detection cascade → post-mortem ("the change was too quick").</td></tr>
+<tr><td><code>flagged</code></td>
+  <td>Trace meter stays above 66% for 60+ consecutive ticks
+    (<code>flaggedTicks</code> counter).</td>
+  <td>Detection cascade → post-mortem ("too much visible tampering").</td></tr>
+<tr><td><code>budget</code></td>
+  <td><code>tick &gt;= 2400</code> with no win.</td>
+  <td>Calm <code>#scrim-result</code> modal — "cycle budget expired".</td></tr>
+</table>
+
+<p>The trace-meter watcher decays toward zero each tick if the rate isn't
+moving aggressively. So a single bad cycle won't end the run; sustained
+abuse will:</p>
+
+<pre class="code"><span class="key">if</span>(reviewVal&gt;<span class="num">66</span>) flaggedTicks++;
+<span class="key">else</span>          flaggedTicks=Math.max(<span class="num">0</span>,flaggedTicks-<span class="num">2</span>);
+<span class="key">if</span>(flaggedTicks&gt;<span class="num">60</span>) <span class="key">return</span> <span class="fn">endRun</span>(<span class="key">false</span>,<span class="str">'flagged'</span>,{});</pre>
+
+<p>The trace meter itself has three bands (<code>traceBand()</code>): nominal
+(&lt;33), scrutiny (33–66), flagged (&gt;66). The sidebar's three-colour
+indicator shows them; the API exposes the band name as a string.</p>
+
+<div class="demo">
+  <h4 style="margin-top:0">Trace meter, the three bands</h4>
+  <div class="row">
+    <div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:3px">nominal — &lt; 33</div>
+      <div class="meter"><div class="meter-fill" style="width:18%;background:var(--bright)"></div></div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:3px">scrutiny — 33–66</div>
+      <div class="meter"><div class="meter-fill" style="width:50%;background:var(--warn)"></div></div>
+    </div>
+    <div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:3px">FLAGGED — &gt; 66</div>
+      <div class="meter"><div class="meter-fill" style="width:80%;background:var(--red)"></div></div>
+    </div>
+  </div>
+  <div class="cap">demo // trace meter colour bands — paintTelemetry()</div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="cascade">
+<h2><span class="num">10</span>Detection cascade</h2>
+
+<p>When a run ends in <code>cliff</code> or <code>flagged</code>,
+<code>playDetection()</code> takes over the screen. The lines of a fixed
+script type themselves out one character at a time. A red trace bar fills
+in the background. When the script finishes, a blinking <b>RESET IP</b>
+button appears. The trace keeps creeping while the player decides — the
+urgency is real.</p>
+
+<p>Clicking RESET hides the cascade, does a soft reset (physiology only —
+breaches and code are kept), and surfaces a targeted post-mortem.</p>
+
+<pre class="code"><span class="key">const</span> CASCADE_SCRIPTS={
+  cliff:[
+    {t:<span class="str">'ok'</span>,  m:<span class="str">'&gt; monitoring cardiac log...'</span>},
+    {t:<span class="str">'hi'</span>,  m:<span class="str">'&gt; rapid BPM decline detected'</span>},
+    {t:<span class="str">''</span>,    m:<span class="str">'&gt; beginning diagnostics...'</span>},
+    <span class="com">// ...11 lines total</span>
+    {t:<span class="str">'crit'</span>,m:<span class="str">'&gt; OUTBOUND TRACE STARTED'</span>},
+  ],
+  flagged:[ <span class="com">/* parallel script */</span> ],
+};</pre>
+
+<div class="demo">
+  <h4 style="margin-top:0">Live cascade — click to start</h4>
+  <button class="go" onclick="playCascadeDemo()">▶ TRIGGER cliff</button>
+  <button onclick="resetCascadeDemo()" style="margin-left:6px">RESET</button>
+  <div style="margin-top:12px">
+    <div class="castD">
+      <div class="head">
+        <span class="dx">▲</span>
+        <span>MEDCORP &middot; REVIEW SUBSYSTEM &middot; LIVE TRACE</span>
+        <span class="dx" style="margin-left:auto">▲</span>
+      </div>
+      <pre class="body" id="cascade-body"></pre>
+      <div class="tw">
+        <div class="tlab"><span>OUTBOUND TRACE</span><span id="cascade-pct">0%</span></div>
+        <div class="tr"><div class="tf" id="cascade-fill"></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="cap">demo // detection cascade — abbreviated 5-line excerpt of the real cliff script</div>
+</div>
+
+<h3>The post-mortem</h3>
+
+<p>Each cascade reason has a matching entry in <code>POSTMORTEM</code>:</p>
+
+<pre class="code"><span class="key">const</span> POSTMORTEM={
+  cliff:{
+    title:<span class="str">'// rapid BPM decline detected'</span>,
+    body:<span class="str">'&lt;p&gt;BPM fell by &lt;b&gt;{drop}&lt;/b&gt;...&lt;/p&gt; ...'</span>,
+  },
+  flagged:{ <span class="com">/* parallel post-mortem */</span> },
+};</pre>
+
+<p><code>{drop}</code> is interpolated with the actual measured drop from
+the <code>info</code> payload that <code>endRun</code> received. The body
+text always points the player at the relevant node doc to read.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="term">
+<h2><span class="num">11</span>Terminal &amp; filesystem</h2>
+
+<p>The terminal is a simple <i>echo-then-act</i> loop. The input field's
+<code>keydown</code> handler watches for Enter, splits on whitespace, looks
+up the first token in a <code>CMDS</code> object, and calls it.</p>
+
+<pre class="code"><span class="fn">$</span>(<span class="str">'termin'</span>).<span class="fn">addEventListener</span>(<span class="str">'keydown'</span>,e=&gt;{
+  <span class="key">if</span>(e.key!==<span class="str">'Enter'</span>) <span class="key">return</span>;
+  <span class="key">const</span> raw=e.target.value.trim(); e.target.value=<span class="str">''</span>;
+  <span class="key">if</span>(!raw) <span class="key">return</span>;
+  <span class="fn">techo</span>(raw);                                  <span class="com">// print the typed line</span>
+  <span class="key">const</span> [c,...r]=raw.split(/\s+/);
+  <span class="key">const</span> fn=CMDS[c.toLowerCase()];
+  <span class="key">if</span>(fn) <span class="fn">fn</span>(r[<span class="num">0</span>]);
+  <span class="key">else</span>   <span class="fn">tprint</span>(c+<span class="str">': command not found — try "help"'</span>,<span class="str">'e'</span>);
+});</pre>
+
+<p>Output uses two helpers: <code>tprint(text, cls?)</code> appends a styled
+line; <code>techo(c)</code> echoes the prompt + the player's typed command.
+The classes are one-letter shorthand on the line element:
+<code>u</code> (user input, hi-bright), <code>e</code> (error, red),
+<code>ok</code> (success), <code>w</code> (warn), <code>d</code> (dim).</p>
+
+<h3>The command table</h3>
+
+<table class="t">
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>help</code></td><td>Print the full command list, plus a hint about <code>script</code> being locked.</td></tr>
+<tr><td><code>scan</code></td><td>List the four nodes and their states.</td></tr>
+<tr><td><code>breach &lt;node&gt;</code></td><td>Open the breach modal for that node.</td></tr>
+<tr><td><code>ls [path]</code></td><td>At root: list the nodes. Inside a node: list its files.</td></tr>
+<tr><td><code>cd &lt;node&gt; / cd .. / cd /</code></td><td>Move into a breached node, or back out.</td></tr>
+<tr><td><code>pwd</code></td><td>Print the current working directory.</td></tr>
+<tr><td><code>cat &lt;file&gt;</code></td><td>Print a file's contents to the terminal.</td></tr>
+<tr><td><code>nano &lt;file&gt;</code></td><td>Open the config editor for an editable file.</td></tr>
+<tr><td><code>inject</code></td><td>Open <code>regulator.js</code> editor. Requires <code>n_rate</code> breached.</td></tr>
+<tr><td><code>script</code></td><td>Open <code>solver.js</code> editor. Requires <code>scriptUnlocked</code>.</td></tr>
+<tr><td><code>run / stop</code></td><td>Start or stop the routine.</td></tr>
+<tr><td><code>newgame</code></td><td>Wipe localStorage and reload.</td></tr>
+</table>
+
+<p>The prompt itself reflects <code>cwd</code> — typing <code>cd n_rate</code>
+changes it to <code>greynet@gn-2241 /n_rate $</code>.</p>
+
+<h3>A small interaction trick</h3>
+
+<p>A <code>mouseup</code> listener on the whole <code>#term</code> region
+focuses the input — <i>unless</i> the player has actually selected text
+(so copy-paste still works):</p>
+
+<pre class="code"><span class="fn">$</span>(<span class="str">'term'</span>).<span class="fn">addEventListener</span>(<span class="str">'mouseup'</span>,e=&gt;{
+  <span class="key">if</span>(window.getSelection().toString()) <span class="key">return</span>;
+  <span class="key">if</span>(e.target.tagName===<span class="str">'INPUT'</span>)        <span class="key">return</span>;
+  <span class="fn">$</span>(<span class="str">'termin'</span>).<span class="fn">focus</span>();
+});</pre>
+</section>
+
+<!-- ============================================================ -->
+<section id="editors">
+<h2><span class="num">12</span>Editors &amp; modals</h2>
+
+<p>Four of the modals are code-editing surfaces, all built on plain
+<code>&lt;textarea&gt;</code>s with two layers of enhancement on top:</p>
+
+<table class="t">
+<tr><th>Modal</th><th>Textarea</th><th>Mode</th><th>API completion?</th></tr>
+<tr><td>Breach</td><td><code>#bx-code</code></td><td>JS</td><td>no</td></tr>
+<tr><td>Nano</td><td><code>#nx-code</code></td><td>cfg</td><td>no</td></tr>
+<tr><td>Library</td><td><code>#code</code></td><td>JS</td><td>yes</td></tr>
+<tr><td>Solver</td><td><code>#scriptcode</code></td><td>JS</td><td>yes</td></tr>
+</table>
+
+<p>The two enhancements are:</p>
+<ul>
+  <li><b>Syntax highlighting</b> via <code>attachHighlight(ta, mode)</code> —
+    a coloured <code>&lt;pre.hl&gt;</code> layer sits behind the textarea,
+    the textarea's own text is transparent but its caret stays visible.
+    Both share font, size, padding, line-height and box-model so the
+    glyphs line up exactly.</li>
+  <li><b>Editor behaviours</b> via <code>enhanceEditor(ta, opts)</code> —
+    Tab indents, Shift-Tab outdents, Enter keeps indent (and expands
+    <code>{...}</code> blocks), brackets and quotes auto-close, Backspace
+    deletes an empty pair, and (for JS modes) Tab / Ctrl-Space completes
+    <code>ns.greynet.*</code> method names.</li>
+</ul>
+
+<h3>How code submission works — a recurring pattern</h3>
+
+<p>Every editor compiles the textarea content with <code>new&nbsp;Function</code>
+and a return-the-named-function trailer. There are three of these,
+near-identical:</p>
+
+<pre class="code"><span class="com">// breach modal submit</span>
+fn=<span class="key">new</span> <span class="fn">Function</span>($(<span class="str">'bx-code'</span>).value+<span class="str">'\n;return unlock;'</span>)();
+<span class="key">if</span>(<span class="key">typeof</span> fn!==<span class="str">'function'</span>) <span class="key">throw</span> <span class="key">new</span> Error(<span class="str">'no unlock() defined'</span>);
+
+<span class="com">// library editor save</span>
+<span class="key">const</span> fn=<span class="key">new</span> <span class="fn">Function</span>($(<span class="str">'code'</span>).value+<span class="str">'\n;return regulate;'</span>)();
+<span class="key">if</span>(<span class="key">typeof</span> fn!==<span class="str">'function'</span>) <span class="key">throw</span> <span class="key">new</span> Error(<span class="str">'no regulate() function found'</span>);
+
+<span class="com">// run button</span>
+fn=<span class="key">new</span> <span class="fn">Function</span>(libraryText+<span class="str">'\n;return regulate;'</span>)();</pre>
+
+<p>The solver editor is different: it wraps the player's code in an async
+IIFE so they can <code>await</code> at the top level:</p>
+
+<pre class="code">body=<span class="key">new</span> <span class="fn">Function</span>(<span class="str">'ns'</span>,<span class="str">'log'</span>,<span class="str">'sleep'</span>,
+  <span class="str">'"use strict";return (async()=&gt;{'</span>+src+<span class="str">'\n})();'</span>);
+<span class="key">await</span> <span class="fn">body</span>(ns,log,sleep);</pre>
+
+<div class="warn">
+  <b>No sandbox.</b> All four use raw <code>new&nbsp;Function</code> — the player's
+  code runs with full access to the page's globals. That's a prototype
+  choice; a shipped version would either run scripts in a worker, or
+  enforce a stricter shape.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="hl">
+<h2><span class="num">13</span>Syntax highlighting</h2>
+
+<p>The highlighter is hand-rolled, ~80 lines. It exists because shipping a
+real editor library would have meant a build step. <code>hlJS(src)</code> walks
+the source character by character; <code>hlCfg(src)</code> processes line by
+line.</p>
+
+<h3>JS token types</h3>
+
+<p>The tokeniser emits six classes. Here's what each colour means in the
+editors:</p>
+
+<div class="demo">
+  <span class="swatch k">keyword</span>
+  <span class="swatch s">"string"</span>
+  <span class="swatch n">42</span>
+  <span class="swatch c">// comment</span>
+  <span class="swatch f">fnName(</span>
+  <span class="swatch o">{(=)}</span>
+  <div class="cap">demo // editor token palette</div>
+</div>
+
+<p>The function-name rule is dual-purpose: an identifier is coloured as a
+function name <i>either</i> if it's immediately followed by <code>(</code>
+<i>or</i> if it appears in the <code>GREYNET_API</code> list. So
+<code>ns.greynet.scan</code> stays green even when written without
+parentheses.</p>
+
+<h3>Config token types</h3>
+
+<p>The cfg highlighter is simpler — it matches <code>KEY = VALUE</code> lines
+with one regex:</p>
+
+<pre class="code"><span class="key">const</span> m=/^(\s*)([A-Z_][A-Z0-9_]*)(\s*=\s*)(.*)$/.<span class="fn">exec</span>(line);</pre>
+
+<p>Comments are any line starting with <code>#</code>. The key, the
+<code>=</code>, and the value get their own classes.</p>
+
+<h3>How the layer stays aligned</h3>
+
+<p>The trick to making a transparent textarea match a coloured
+<code>pre</code> underneath is that both share <i>every</i> font, spacing
+and box property. Both elements:</p>
+
+<ul>
+  <li><code>font-family: var(--mono); font-size: 12px; line-height: 1.45;</code></li>
+  <li><code>tab-size: 2; padding: 8px; border: 1px solid transparent;</code></li>
+  <li><code>box-sizing: border-box; white-space: pre-wrap; word-break: break-word;</code></li>
+  <li><code>letter-spacing: 0;</code></li>
+</ul>
+
+<p>The textarea sits on top with <code>color: transparent</code> and a
+visible <code>caret-color</code>; the pre layer is <code>z-index: 1</code>
+and <code>pointer-events: none</code>. A scroll listener keeps the pre
+layer's scroll position synced to the textarea.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="api">
+<h2><span class="num">14</span>ns.greynet API</h2>
+
+<p>This is the automation surface — the prototype's stand-in for the wider
+mod's scriptable API. Every manual action above has a method here, so a
+<code>solver.js</code> can do the contract end-to-end. It only becomes
+reachable once the player has beaten the contract by hand once.</p>
+
+<table class="t">
+<tr><th>Method</th><th>Returns</th><th>Mirrors</th></tr>
+
+<tr><td colspan="3" style="background:var(--panel);color:var(--cyan);
+  font-size:10px;letter-spacing:1.5px">RECON</td></tr>
+<tr><td><code>scan()</code></td>
+  <td><code>[{id, name, state}, ...]</code></td>
+  <td>Terminal <code>scan</code></td></tr>
+<tr><td><code>inspect(id)</code></td>
+  <td><code>{id, state, breachPuzzle, files}</code></td>
+  <td>—</td></tr>
+
+<tr><td colspan="3" style="background:var(--panel);color:var(--cyan);
+  font-size:10px;letter-spacing:1.5px">BREACH</td></tr>
+<tr><td><code>getBreachPuzzle(id)</code></td>
+  <td><code>{node, family, shown, probe}</code></td>
+  <td>Opens the breach modal — but only returns the puzzle.</td></tr>
+<tr><td><code>submitBreach(id, fn)</code></td>
+  <td>true/false</td>
+  <td>Submitting an <code>unlock</code> function.</td></tr>
+
+<tr><td colspan="3" style="background:var(--panel);color:var(--cyan);
+  font-size:10px;letter-spacing:1.5px">DISCOVERY</td></tr>
+<tr><td><code>ls(id)</code></td>
+  <td><code>[filename, ...]</code></td>
+  <td>Terminal <code>ls</code></td></tr>
+<tr><td><code>cat(id, file)</code></td>
+  <td>file contents</td>
+  <td>Terminal <code>cat</code></td></tr>
+
+<tr><td colspan="3" style="background:var(--panel);color:var(--cyan);
+  font-size:10px;letter-spacing:1.5px">COUNTERMEASURES</td></tr>
+<tr><td><code>getCountermeasure(id)</code></td>
+  <td><code>{node, form, file, active} | null</code></td>
+  <td>—</td></tr>
+<tr><td><code>writeConfig(id, file, txt)</code></td>
+  <td>true</td>
+  <td>Nano save.</td></tr>
+
+<tr><td colspan="3" style="background:var(--panel);color:var(--cyan);
+  font-size:10px;letter-spacing:1.5px">ENGAGEMENT</td></tr>
+<tr><td><code>deployLibrary(src)</code></td>
+  <td>true</td>
+  <td>Library editor save.</td></tr>
+<tr><td><code>run()</code></td>
+  <td>—</td>
+  <td>Sidebar <code>RUN</code> button.</td></tr>
+<tr><td><code>stop()</code></td>
+  <td>—</td>
+  <td>Sidebar <code>STOP</code> button.</td></tr>
+
+<tr><td colspan="3" style="background:var(--panel);color:var(--cyan);
+  font-size:10px;letter-spacing:1.5px">MONITORING (sync — no await)</td></tr>
+<tr><td><code>telemetry()</code></td>
+  <td><code>{bpm, rhythmVar, amp, cond, tick}</code></td>
+  <td>The telemetry sidebar.</td></tr>
+<tr><td><code>signatureMet()</code></td>
+  <td>true/false</td>
+  <td>—</td></tr>
+<tr><td><code>traceBand()</code></td>
+  <td><code>'nominal' | 'scrutiny' | 'flagged'</code></td>
+  <td>—</td></tr>
+<tr><td><code>ticksElapsed()</code></td>
+  <td>integer</td>
+  <td>The tick counter.</td></tr>
+<tr><td><code>tickBudget()</code></td>
+  <td>2400</td>
+  <td>The cycle budget.</td></tr>
+</table>
+
+<p>The script execution context adds two helpers beyond <code>ns</code>:
+<code>log(text)</code> writes to the terminal with a <code>[solver]</code>
+prefix, and <code>sleep(ms)</code> returns a Promise the script can
+<code>await</code>.</p>
+
+<div class="note">
+  <b>One quirk worth knowing.</b> Successful automation flips
+  <code>usedScript=true</code>, which prevents the in-script run from
+  unlocking automation again on win (<code>scriptUnlocked &amp;&amp; !usedScript</code>
+  is the unlock guard). So automation only unlocks on a <i>by-hand</i> win
+  — exactly the design intent.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="heart">
+<h2><span class="num">15</span>Heart rendering</h2>
+
+<p>The heart is a 67-line ASCII drawing held in a single array,
+<code>HEART_ART</code>. It's rendered once, then re-styled every frame.</p>
+
+<h3>Once: glyph-grid construction</h3>
+
+<pre class="code"><span class="key">function</span> <span class="fn">renderHeartArt</span>(){
+  <span class="key">const</span> el=<span class="fn">$</span>(<span class="str">'heart'</span>); el.textContent=<span class="str">''</span>;
+  heartCells=[];
+  <span class="key">const</span> frag=document.<span class="fn">createDocumentFragment</span>();
+  <span class="key">for</span>(<span class="key">let</span> r=<span class="num">0</span>;r&lt;HEART_ART.length;r++){
+    <span class="key">const</span> line=HEART_ART[r];
+    <span class="key">for</span>(<span class="key">let</span> c=<span class="num">0</span>;c&lt;line.length;c++){
+      <span class="key">const</span> ch=line[c];
+      <span class="key">if</span>(ch===<span class="str">' '</span>){ frag.<span class="fn">appendChild</span>(document.<span class="fn">createTextNode</span>(<span class="str">' '</span>)); <span class="key">continue</span>; }
+      <span class="key">const</span> sp=document.<span class="fn">createElement</span>(<span class="str">'span'</span>);
+      sp.className=<span class="str">'g'</span>; sp.textContent=ch;
+      frag.<span class="fn">appendChild</span>(sp);
+      heartCells.<span class="fn">push</span>({span:sp, col:c, row:r, ch:ch});
+    }
+    frag.<span class="fn">appendChild</span>(document.<span class="fn">createTextNode</span>(<span class="str">'\n'</span>));
+  }
+  el.<span class="fn">appendChild</span>(frag);
+}</pre>
+
+<p>Each non-space glyph gets its own <code>&lt;span class="g"&gt;</code>
+recorded in <code>heartCells</code> with its grid coordinates and original
+character. Spaces stay as plain text nodes to keep the DOM count down.
+<code>heartCells</code> ends up at a few hundred entries — large enough to
+look good, small enough to walk every frame.</p>
+
+<h3>Per frame: the beat</h3>
+
+<p><code>drawHeart()</code> computes a "beat curve" and applies it as a
+transform + filter on the <code>#heart</code> element:</p>
+
+<pre class="code"><span class="key">const</span> phase=beatPhase%<span class="num">1</span>;                                <span class="com">// 0..1 within a beat</span>
+<span class="key">const</span> pulse=Math.exp(-phase*<span class="num">6</span>)*<span class="num">0.85</span> +
+            Math.exp(-((phase-<span class="num">0.16</span>)**<span class="num">2</span>)*<span class="num">40</span>)*<span class="num">0.4</span>;     <span class="com">// systole spike + soft echo</span>
+<span class="key">const</span> amp=<span class="fn">clamp</span>(hw.amp,<span class="num">0</span>,<span class="num">1.3</span>);
+<span class="key">const</span> scale =<span class="num">1</span> + pulse*<span class="num">0.035</span>*amp;                    <span class="com">// subtle squeeze</span>
+<span class="key">const</span> bright=<span class="num">0.72</span> + pulse*<span class="num">0.55</span>*amp + (amp-<span class="num">1</span>)*<span class="num">0.1</span>;
+el.style.transform=<span class="str">'scale('</span>+scale+<span class="str">')'</span>;
+el.style.filter   =<span class="str">'brightness('</span>+bright+<span class="str">')'</span>;</pre>
+
+<p>The two-exponential curve gives a sharp upstroke and a soft secondary
+echo — the systole/diastole shape of a real heartbeat. Amplitude scales
+both the squeeze and the brightness, so contraction strength is visible.
+Below <code>hw.bpm &lt; 24</code> the heart goes flat (no pulse, dim
+filter); below <code>hw.amp &lt; 0.55</code> it just dims; below
+<code>hw.amp &lt; 0.8</code> it's "weak".</p>
+
+<div class="demo">
+  <h4 style="margin-top:0">Mini heart, beat curve only</h4>
+  <div class="row">
+    <button onclick="setHeartDemoBpm(72)">72 bpm (healthy)</button>
+    <button onclick="setHeartDemoBpm(48)">48 bpm (declining)</button>
+    <button onclick="setHeartDemoBpm(0)">0 bpm (arrest)</button>
+  </div>
+  <div style="text-align:center;margin-top:18px">
+    <div class="heartD" id="demoHeart"></div>
+  </div>
+  <div class="cap">demo // beat curve from drawHeart() driving a small 9-line ASCII heart</div>
+</div>
+
+<h3>Resize: fitHeart and the heartbox transform</h3>
+
+<p>The heart art is a fixed-size ASCII drawing. To fill the available stage
+(at any zoom, any window size), <code>fitHeart()</code> wraps it in
+<code>#heartbox</code> and applies a CSS scale:</p>
+
+<pre class="code">box.style.transform=<span class="str">'scale(1)'</span>;                <span class="com">// reset to measure</span>
+<span class="key">const</span> natW=heart.offsetWidth, natH=heart.offsetHeight;
+<span class="key">const</span> scale=Math.min(availW/natW, availH/natH, <span class="num">2.2</span>);
+box.style.transform=<span class="str">'scale('</span>+scale+<span class="str">')'</span>;</pre>
+
+<p>The beat pulse is applied to <code>#heart</code> <i>inside</i> the box,
+so the fit-scale and the beat-scale don't fight each other.
+<code>relayoutHeart()</code> = <code>fitHeart() + positionHotzones() +
+drawBloodflow()</code>, and runs on resize, zoom, and after either drag
+gutter moves.</p>
+
+<h3>Node panels — overlay placement</h3>
+
+<p>The four panels overlaid on the heart aren't part of the ASCII art —
+they're absolutely-positioned <code>.hotzone</code> divs.
+<code>PANEL_POS</code> stores each one's anchor as fractions of the heart
+box (x, y in 0..1); <code>positionHotzones()</code> reads the live box
+dimensions and pixel-positions them. So they sit on the same heart-relative
+spots no matter how it's scaled.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="flow">
+<h2><span class="num">16</span>Bloodflow trace</h2>
+
+<p>This is the most striking visual flourish. While the heart is alive,
+three pulses of light circulate the heart's chambers in a loop. They don't
+sit on top of the art — they <i>are</i> the art: the glyphs the pulse
+passes over are temporarily swapped for denser characters and lit up
+green.</p>
+
+<h3>The path</h3>
+
+<pre class="code"><span class="key">const</span> FLOW_PATH=[
+  {x:<span class="num">0.46</span>,y:<span class="num">0.06</span>},   <span class="com">// vena cava — venous return</span>
+  {x:<span class="num">0.40</span>,y:<span class="num">0.20</span>},   <span class="com">// right atrium</span>
+  {x:<span class="num">0.34</span>,y:<span class="num">0.42</span>},   <span class="com">// right ventricle</span>
+  {x:<span class="num">0.40</span>,y:<span class="num">0.66</span>},   <span class="com">// toward the apex</span>
+  {x:<span class="num">0.54</span>,y:<span class="num">0.82</span>},   <span class="com">// apex turn</span>
+  {x:<span class="num">0.62</span>,y:<span class="num">0.60</span>},   <span class="com">// left ventricle</span>
+  {x:<span class="num">0.66</span>,y:<span class="num">0.34</span>},   <span class="com">// left atrium</span>
+  {x:<span class="num">0.62</span>,y:<span class="num">0.12</span>},   <span class="com">// aorta — leaving</span>
+];</pre>
+
+<p>Coordinates are fractions of the art grid, in the same convention as
+<code>PANEL_POS</code>.</p>
+
+<h3>The squelch curve — "snap on the beat, then hold"</h3>
+
+<p>A naïve interpolation between waypoints would have the pulse drift
+smoothly along the path. That doesn't feel like blood. So the prototype
+uses a deliberately non-linear curve: the pulse <b>spurts</b> to ~94% of
+the next waypoint in the first 22% of a beat, then crawls the last sliver:</p>
+
+<pre class="code"><span class="key">function</span> <span class="fn">squelch</span>(t){
+  <span class="key">if</span>(t&lt;<span class="num">0.22</span>){
+    <span class="key">const</span> k=t/<span class="num">0.22</span>;                              <span class="com">// 0..1 over the snap window</span>
+    <span class="key">return</span> <span class="num">0.94</span>*(<span class="num">1</span>-(<span class="num">1</span>-k)*(<span class="num">1</span>-k)*(<span class="num">1</span>-k));     <span class="com">// fast spurt to ~94%</span>
+  }
+  <span class="key">return</span> <span class="num">0.94</span> + <span class="num">0.06</span>*((t-<span class="num">0.22</span>)/<span class="num">0.78</span>);          <span class="com">// creeps the last sliver</span>
+}</pre>
+
+<p>Reading: at <code>t = 0</code> (start of beat) the pulse is fully at the
+last waypoint. By <code>t = 0.22</code> it's at 94% of the way to the next
+one. The remaining 78% of the beat creeps it the last 6%. The result is
+that blood appears to <i>spurt</i> on each beat, then sits — exactly the
+rhythm of a real circulation.</p>
+
+<h3>Three pulses, streaks not dots</h3>
+
+<pre class="code"><span class="key">const</span> PULSE_OFFSETS=[<span class="num">0</span>, <span class="num">2.4</span>, <span class="num">4.8</span>];           <span class="com">// beats behind the lead</span>
+<span class="key">const</span> PULSE_RAMP=[<span class="str">'+'</span>,<span class="str">'*'</span>,<span class="str">'#'</span>,<span class="str">'@'</span>];           <span class="com">// faint edge to hot core</span></pre>
+
+<p>Three pulses ride the same path, spaced 2.4 beats apart. Each pulse
+is a streak with 7 sample points trailing back from the head, each of
+those a small radius. For every cell in <code>heartCells</code>,
+<code>drawBloodflow()</code> finds the strongest passing sample, swaps the
+glyph for one from <code>PULSE_RAMP</code> proportional to that strength,
+and lights it electric green.</p>
+
+<p>The colour is computed by lerping RGB channels by the strength
+<code>i</code>:</p>
+
+<pre class="code">cell.span.style.color=<span class="str">'rgb('</span>
+  +Math.<span class="fn">round</span>(<span class="fn">lerp</span>(<span class="num">150</span>,<span class="num">210</span>,i))+<span class="str">','</span>
+  +Math.<span class="fn">round</span>(<span class="fn">lerp</span>(<span class="num">240</span>,<span class="num">255</span>,i))+<span class="str">','</span>
+  +Math.<span class="fn">round</span>(<span class="fn">lerp</span>(<span class="num">150</span>,<span class="num">190</span>,i))+<span class="str">')'</span>;</pre>
+
+<p>At each frame's start the previous frame's lit cells are restored to
+their original glyph and stripped of inline styles (the
+<code>cell.lit</code> flag tracks them). So the trace genuinely changes
+the art for one frame, then puts it back.</p>
+
+<div class="note">
+  <b>One subtle decision.</b> The trace is suppressed when <code>hw.bpm &lt; 24</code>
+  — flatline, no flow. That means the bloodflow doubles as a vital sign:
+  if the heart is on the way to arrest, the player sees the trace fade
+  before the rate hits the win threshold.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="telem">
+<h2><span class="num">17</span>Telemetry painting</h2>
+
+<p><code>paintTelemetry()</code> is straightforward but has one quirk
+worth knowing: the <code>v_bpm</code> number is sometimes held at a
+"dipped" value for a frame so the failsafe correction reads as an actual
+visible jump.</p>
+
+<pre class="code"><span class="com">// while a countermeasure dip is being held, don't overwrite the BPM</span>
+<span class="com">// number — let the dipped reading linger so the jump is visible</span>
+<span class="key">if</span>(!<span class="fn">$</span>(<span class="str">'v_bpm'</span>).dataset.dipHold) <span class="fn">$</span>(<span class="str">'v_bpm'</span>).textContent=hw.bpm.<span class="fn">toFixed</span>(<span class="num">0</span>);</pre>
+
+<p><code>flashFailsafe(dippedBpm)</code> sets that flag for ~90&nbsp;ms,
+writes the dipped value into the element, kicks off the <code>numflick</code>
+animation, and also flags <code>document.body.dataset.cmfight</code> so
+the RATE panel can play its red-border <code>pfight</code> animation.</p>
+
+<h3>Bar and number colour rules</h3>
+
+<table class="t">
+<tr><th>Field</th><th>Colour</th></tr>
+<tr><td>BPM</td><td>≥ 60 healthy green; ≥ 42 amber; below that red.</td></tr>
+<tr><td>Rhythm var</td><td>&lt; 0.15 cyan; above that red.</td></tr>
+<tr><td>Amplitude</td><td>≥ 0.8 purple; ≥ 0.4 amber; below that red.</td></tr>
+<tr><td>Conduction</td><td>|cond − 120| &lt; 40 blue; otherwise amber.</td></tr>
+<tr><td>Trace meter</td><td>≤ 33 green; ≤ 66 amber; above that red.</td></tr>
+</table>
+
+<p>The bar's width is a clamped percentage of an expected range, with a
+minimum of 2–4% so the bar is always visible.</p>
+
+<div class="demo">
+  <h4 style="margin-top:0">Failsafe correction — bar + number flicker</h4>
+  <div class="row">
+    <div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:4px">BPM</div>
+      <span class="vnum" id="demoVNum">72</span>
+      <div class="bar" style="margin-top:6px"><div class="fill" id="demoBar" style="width:45%"></div></div>
+    </div>
+    <button class="go" onclick="flickFailsafeDemo()">▶ TRIGGER failsafe correction</button>
+  </div>
+  <div class="cap">demo // flashFailsafe() — bar flicks while the number scales/reddens</div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="score">
+<h2><span class="num">18</span>Four-axis scoring</h2>
+
+<p>Every successful run is scored on four numbers, all "lower is better":</p>
+
+<pre class="code"><span class="key">function</span> <span class="fn">computeScore</span>(){
+  <span class="key">const</span> lines=libraryText.<span class="fn">split</span>(<span class="str">'\n'</span>)
+    .<span class="fn">filter</span>(l=&gt;l.<span class="fn">trim</span>()&amp;&amp;!l.<span class="fn">trim</span>().<span class="fn">startsWith</span>(<span class="str">'//'</span>)).length;
+  <span class="key">return</span> {
+    time:  tick,                                   <span class="com">// cycles used</span>
+    trace: Math.<span class="fn">round</span>(reviewVal)+<span class="str">'%'</span>,               <span class="com">// peak review meter</span>
+    ram:   (<span class="num">2.0</span>+lines*<span class="num">0.15</span>).<span class="fn">toFixed</span>(<span class="num">2</span>)+<span class="str">'GB'</span>,        <span class="com">// mock RAM use</span>
+    loc:   lines,                                  <span class="com">// non-empty non-comment lines</span>
+  };
+}</pre>
+
+<p><code>recordBest(sc)</code> parses the strings back to numbers, compares
+against the current bests in <code>best</code>, and updates any that
+improved. Improved axes are returned in an array so the win modal can
+star them.</p>
+
+<div class="demo">
+  <h4 style="margin-top:0">Example end-of-run score card</h4>
+  <div class="score">
+    <div class="sax"><div class="k">EXEC TIME ★</div><div class="v" style="color:var(--bright)">1182</div><div class="b">best 1182</div></div>
+    <div class="sax"><div class="k">TRACE</div><div class="v">42%</div><div class="b">best 38%</div></div>
+    <div class="sax"><div class="k">RAM</div><div class="v">2.45GB</div><div class="b">best 2.30GB</div></div>
+    <div class="sax"><div class="k">LINES ★</div><div class="v" style="color:var(--bright)">3</div><div class="b">best 3</div></div>
+  </div>
+  <div class="cap">demo // four-axis score card with ★ on this run's improvements</div>
+</div>
+
+<div class="warn">
+  <b>The "trade-off" design.</b> The intro modal says explicitly: each axis
+  is its own optimisation puzzle, and they trade off — a faster solve
+  floods the node and dirties the trace; terser code is rarely fastest.
+  In the current prototype <code>ram</code> is just a function of LoC, so
+  it doesn't actually trade off against the others. Worth flagging as a
+  candidate for genuine modelling later.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="save">
+<h2><span class="num">19</span>Persistence</h2>
+
+<p>Progress lives in a single JSON blob under
+<code>localStorage['greynet-gn2241-v1']</code>. The split is deliberate:</p>
+
+<table class="t">
+<tr><th>Persisted</th><th>Not persisted</th></tr>
+<tr><td>Node states (sealed / breached / etc.)</td><td><code>hw</code>, <code>setp</code>, <code>stream</code> — all physiology</td></tr>
+<tr><td><code>failsafe</code>, <code>conduction</code> (countermeasure config)</td><td><code>tick</code>, <code>beatPhase</code>, <code>reviewVal</code></td></tr>
+<tr><td><code>libraryText</code> and the solver editor's text</td><td><code>flaggedTicks</code>, <code>flaggedWarned</code></td></tr>
+<tr><td><code>scriptUnlocked</code> and the personal bests</td><td><code>running</code>, the active <code>sim</code> timer</td></tr>
+<tr><td>The current <code>cwd</code></td><td>—</td></tr>
+</table>
+
+<p>So reloading the page always drops the player at a fresh patient, with
+all their unlocks and edits intact.</p>
+
+<p>The save points are:</p>
+<ul>
+  <li>Every successful breach (<code>setNodeState</code>)</li>
+  <li>Every nano save</li>
+  <li>Every library save</li>
+  <li>Closing the solver editor</li>
+  <li>The win path in <code>endRun</code> (to lock in new bests + the unlock)</li>
+  <li>A <code>beforeunload</code> listener as a final safety net</li>
+</ul>
+
+<p><code>newgame</code> wipes the key and reloads. <code>FULL RESET</code>
+(the button label once automation is unlocked) re-seals every node and
+restores both countermeasure configs, so a solver run can take the target
+from a true cold start each time.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="layout-bits">
+<h2><span class="num">20</span>Resize &amp; zoom</h2>
+
+<h3>Drag gutters</h3>
+
+<p>Two thin <code>.gutter</code> elements between regions become drag
+handles. <code>makeGutter(id, opts)</code> sets up the pointer/touch
+listeners; <code>opts.apply(pt)</code> does the actual size math and runs
+on every move. Each gutter:</p>
+
+<ul>
+  <li><code>gutter-term</code> — vertical position sets the terminal's
+    height (clamped 90 ≤ h ≤ 70% of viewport).</li>
+  <li><code>gutter-side</code> — horizontal position sets the sidebar's
+    width (clamped 220 ≤ w ≤ 55% of viewport).</li>
+</ul>
+
+<p>After every move, <code>relayoutHeart()</code> reflows the heart so it
+keeps filling its container.</p>
+
+<h3>Zoom</h3>
+
+<p>Two top-strip buttons (A−/A+) and the familiar Ctrl±/Ctrl-0 shortcuts
+all funnel into one variable:</p>
+
+<pre class="code"><span class="key">let</span> zoomLevel=<span class="num">100</span>;
+<span class="key">const</span> ZOOM_MIN=<span class="num">70</span>, ZOOM_MAX=<span class="num">200</span>, ZOOM_STEP=<span class="num">10</span>;
+<span class="key">function</span> <span class="fn">applyZoom</span>(){
+  document.body.style.zoom = (zoomLevel/<span class="num">100</span>);
+  <span class="fn">$</span>(<span class="str">'zoom-val'</span>).textContent = zoomLevel+<span class="str">'%'</span>;
+  <span class="fn">requestAnimationFrame</span>(relayoutHeart);
+}</pre>
+
+<p>It uses CSS <code>zoom</code> on the body, which rescales layout, text
+and spacing in lockstep. After a zoom change, the heart's pixel size has
+changed, so a fresh <code>relayoutHeart</code> on the next frame keeps
+everything aligned.</p>
+
+<div class="warn">
+  <b>CSS <code>zoom</code> is non-standard</b> but widely supported. It's
+  more convenient here than <code>transform: scale</code> because it
+  actually changes layout — text reflows naturally inside it, scrollbars
+  stay sensible, and the click hit-zones for the heart panels track
+  without extra math.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="vocab">
+<h2><span class="num">21</span>Vocabulary</h2>
+
+<p>Plain-English glossary of every term the prototype uses across UI, code
+and docs. Anything you and I might miscommunicate on lives here.</p>
+
+<table class="t">
+<tr><th>Term</th><th>What it means</th></tr>
+
+<tr><td>Greynet</td>
+  <td>Working title of the game. The fictional hacking network the contract
+    is routed through.</td></tr>
+<tr><td>Contract</td>
+  <td>One mission. The prototype has just one: <code>GN-2241 "Quiet Hours"</code>,
+    classified as Tier T2, Level 4.</td></tr>
+<tr><td>Target</td>
+  <td>The fictional person whose cybernetic heart implant the player attacks.
+    The system being hacked.</td></tr>
+<tr><td>Operating theatre</td>
+  <td>The whole interface as a metaphor — the player is operating on a
+    body. The strap line at the top of the page.</td></tr>
+<tr><td>MedCorp</td>
+  <td>Fictional manufacturer of the implant. Appears in the doc headers
+    and the cascade.</td></tr>
+
+<tr><td colspan="2" style="background:var(--panel);color:var(--cyan);font-size:10px;letter-spacing:1.5px">PARTS OF THE IMPLANT</td></tr>
+<tr><td>Node</td>
+  <td>One of the four sub-controllers in the implant. The "things you
+    break into".</td></tr>
+<tr><td>Hotzone / Panel</td>
+  <td>The small inset box drawn on the heart for each node. Clickable.
+    Holds the node label and its state.</td></tr>
+<tr><td>Sealed</td>
+  <td>A node before it's been breached. Closed off.</td></tr>
+<tr><td>Breached</td>
+  <td>A node after the unlock puzzle has been solved. Its files are now
+    readable.</td></tr>
+<tr><td>Injected</td>
+  <td>A node that's currently delivering the player's regulate() to the
+    heart. Only <code>n_rate</code> takes this state.</td></tr>
+
+<tr><td colspan="2" style="background:var(--panel);color:var(--cyan);font-size:10px;letter-spacing:1.5px">CODE THE PLAYER WRITES</td></tr>
+<tr><td>Breach puzzle</td>
+  <td>The "guess the rule" minigame. Player writes <code>unlock(n)</code>
+    that reproduces a hidden function.</td></tr>
+<tr><td>Library</td>
+  <td>The file <code>regulator.js</code>. Contains <code>regulate(t)</code>.
+    "Library" because the cardiac unit "imports" it each cycle.</td></tr>
+<tr><td>regulate(t)</td>
+  <td>The player-written function. Called once per cardiac cycle with
+    live telemetry; returns <code>{rate, gain}</code> setpoints.</td></tr>
+<tr><td>Routine</td>
+  <td>The thing that runs when the player presses RUN. The
+    <code>setInterval</code> that calls <code>regulate()</code> 18 times
+    a second.</td></tr>
+<tr><td>Solver / solver.js</td>
+  <td>The automation script. Locked until the contract is beaten by hand
+    once. Drives the entire flow via <code>ns.greynet</code>.</td></tr>
+
+<tr><td colspan="2" style="background:var(--panel);color:var(--cyan);font-size:10px;letter-spacing:1.5px">PHYSIOLOGY</td></tr>
+<tr><td>BPM / rate</td>
+  <td>Beats per minute. Telemetry reading is <code>hw.bpm</code>; the
+    requested setpoint is <code>setp.rate</code>. Same quantity, two
+    sides of the loop.</td></tr>
+<tr><td>Rhythm variance</td>
+  <td>How uneven the beat intervals are. Healthy ~0.05; flag at ≥0.15.</td></tr>
+<tr><td>Amplitude / gain</td>
+  <td>Contraction strength. Telemetry is <code>hw.amp</code>; setpoint is
+    <code>setp.gain</code>.</td></tr>
+<tr><td>Conduction (delay)</td>
+  <td>The lag in ms between atrial and ventricular activation. Healthy
+    120 ms. Player can't set it directly — only the drift-comp config
+    governs whether it stays still.</td></tr>
+<tr><td>Cardiac cycle</td>
+  <td>One step of the simulation. One call to <code>regulate()</code>.
+    The terminology used in-fiction; <code>tick</code> in code.</td></tr>
+<tr><td>Arrest</td>
+  <td>BPM ≤ 42. The win threshold. Signature clause #5.</td></tr>
+<tr><td>Bradycardic decline</td>
+  <td>The natural pattern the player is faking. Slowing heart rate over
+    time; the medical word for "his heart just gave out".</td></tr>
+
+<tr><td colspan="2" style="background:var(--panel);color:var(--cyan);font-size:10px;letter-spacing:1.5px">DETECTION</td></tr>
+<tr><td>Failure signature</td>
+  <td>The five-clause win condition. All five must hold at arrest.</td></tr>
+<tr><td>Trace meter</td>
+  <td>The "how obvious is your tampering" indicator. Code:
+    <code>reviewVal</code>. Three bands: nominal / scrutiny / flagged.</td></tr>
+<tr><td>Cliff</td>
+  <td>A single-cycle BPM drop &gt; 14. Insta-fail via cascade.</td></tr>
+<tr><td>Flagged</td>
+  <td>The trace meter pinned in its red band for 60+ ticks. Insta-fail
+    via cascade.</td></tr>
+<tr><td>Budget</td>
+  <td>Hard cap of 2,400 cycles per run. Calm fail, not a cascade.</td></tr>
+<tr><td>Detection cascade</td>
+  <td>The full-screen movie-style reveal that plays on cliff/flagged.
+    Lines type, trace bar fills, RESET IP button blinks.</td></tr>
+<tr><td>Post-mortem</td>
+  <td>The targeted explanation that follows the cascade. Says which
+    clause was violated and points at the relevant doc.</td></tr>
+<tr><td>RESET IP</td>
+  <td>The button on the cascade. Hides the cascade, soft-resets the
+    physiology, leaves breaches and code intact.</td></tr>
+
+<tr><td colspan="2" style="background:var(--panel);color:var(--cyan);font-size:10px;letter-spacing:1.5px">COUNTERMEASURES</td></tr>
+<tr><td>Failsafe</td>
+  <td>The <code>n_rate</code> countermeasure. While on, it pulls the rate
+    back toward 72 every cycle. Disarmed in
+    <code>emergency-settings.cfg</code>.</td></tr>
+<tr><td>Drift-comp</td>
+  <td>The <code>n_cond</code> countermeasure. While on, conduction delay
+    drifts upward, which raises rhythm variance. Disarmed in
+    <code>drift-comp.cfg</code>.</td></tr>
+
+<tr><td colspan="2" style="background:var(--panel);color:var(--cyan);font-size:10px;letter-spacing:1.5px">SCORING</td></tr>
+<tr><td>Four-axis score</td>
+  <td>The four numbers a winning run is judged on: <b>time</b>,
+    <b>trace</b>, <b>RAM</b>, <b>LoC</b>. All lower-is-better.</td></tr>
+<tr><td>Personal best</td>
+  <td>The lowest you've achieved on each axis. Stored in <code>best</code>.</td></tr>
+</table>
+</section>
+
+<!-- ============================================================ -->
+<section id="anims">
+<h2><span class="num">22</span>Animation gallery</h2>
+
+<p>Every animation in the prototype, in one place, with the keyframe name
+and where it fires.</p>
+
+<h3>Node panel fight — <code>@keyframes pfight</code></h3>
+<div class="demo">
+  <div class="row">
+    <div class="hotzoneD" id="demoHZ">
+      <span class="lab">RATE CTRL</span>
+      <span class="st">BREACHED</span>
+    </div>
+    <button onclick="fightDemo()">▶ TRIGGER fight</button>
+  </div>
+  <div class="cap">fires on every failsafe correction; the n_rate panel
+    "pushes back" with a red border flash</div>
+</div>
+
+<h3>Bar flicker — <code>@keyframes flick</code></h3>
+<div class="demo">
+  <div class="row">
+    <div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:4px">BPM bar</div>
+      <div class="bar"><div class="fill" id="demoFlickBar" style="width:45%"></div></div>
+    </div>
+    <button onclick="flickBarDemo()">▶ TRIGGER flick</button>
+  </div>
+  <div class="cap">.34s ease — fires whenever the failsafe corrects the rate</div>
+</div>
+
+<h3>Number flicker — <code>@keyframes numflick</code></h3>
+<div class="demo">
+  <div class="row">
+    <span class="vnum" id="demoNumFlick">72</span>
+    <button onclick="numFlickDemo()">▶ TRIGGER numflick</button>
+  </div>
+  <div class="cap">scale up + red flash + scale down; paired with the
+    bar flick on failsafe corrections</div>
+</div>
+
+<h3>Cascade caret &amp; head pulse — <code>@keyframes caret</code>, <code>dxpulse</code></h3>
+<div class="demo">
+  <div class="castD" style="max-width:380px">
+    <div class="head">
+      <span class="dx">▲</span>
+      <span>REVIEW SUBSYSTEM &middot; LIVE TRACE</span>
+      <span class="dx" style="margin-left:auto">▲</span>
+    </div>
+    <pre class="body"><span class="ok">&gt; monitoring cardiac log...</span>
+<span class="hi">&gt; rapid BPM decline detected</span>
+<span class="caret">&gt; beginning diagnostic</span></pre>
+  </div>
+  <div class="cap">the ▲ glyphs in the cascade head pulse opacity; each line
+    streams in with a typing caret</div>
+</div>
+
+<h3>Heart beat — combined transform + filter</h3>
+<div class="demo">
+  <div class="row">
+    <button onclick="setHeartDemoBpm(72)">72 bpm</button>
+    <button onclick="setHeartDemoBpm(48)">48 bpm</button>
+    <button onclick="setHeartDemoBpm(0)">arrest</button>
+  </div>
+  <div style="text-align:center;margin-top:14px">
+    <div class="heartD" id="demoHeart2"></div>
+  </div>
+  <div class="cap">two-exponential pulse curve gives the systolic spike +
+    soft diastolic echo</div>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="review">
+<h2><span class="num">23</span>Code review notes</h2>
+
+<p>What I caught on a careful read of the prototype. The cleanups in the
+first block have already been applied; the second block is what's
+knowingly left in place (either because it's a deliberate prototype
+choice, or because fixing it without a clearer design would be premature).</p>
+
+<h3 style="color:var(--bright)">Recently cleaned up</h3>
+
+<ul>
+  <li><b>Magic numbers extracted to a <code>TUNING</code> block.</b> The
+    handful of numbers that set the game's feel — tick rate, cycle
+    budget, healthy / arrest BPM, the cliff threshold, the smooth-rhythm
+    ceiling, the trace-meter band edges — are now named constants near
+    the top of the script. Every callsite that referenced one of them
+    by literal now reads from <code>TUNING</code>. Balancing the game
+    is a one-block edit rather than a grep-and-pray hunt. (Numbers used
+    in only one place stayed inline next to the logic that owns them —
+    no need to centralise everything.)</li>
+
+  <li><b>Config parsing collapsed into one function.</b> The
+    <code>nano</code> save handler and <code>ns.greynet.writeConfig</code>
+    both used to parse <code>emergency-settings.cfg</code> /
+    <code>drift-comp.cfg</code> with the same regexes inline. Both
+    now go through one <code>parseConfig(file, txt)</code> that returns
+    <code>{ok, error?, summary?, active?}</code>. New config fields
+    only need updating in one place.</li>
+
+  <li><b>Command preamble collapsed via two helpers.</b>
+    <code>cat</code> and <code>nano</code> both had seven lines of
+    "is the file there, is the node breached?" boilerplate; they now
+    each open with a single call to <code>requireBreachedFile(cmd, arg)</code>.
+    <code>ls</code> and <code>cd</code> share a thinner gate,
+    <code>requireBreachedNode(cmd, node, displayArg)</code>. The four
+    handlers shrank noticeably and all four now produce error messages
+    in lockstep.</li>
+
+  <li><b>Unused <code>PANEL_STATE.CLEARED</code> removed.</b> It was
+    defined but never assigned anywhere in the code. Removed so the
+    panel state list reflects the three states that actually exist.</li>
+
+  <li><b><code>setScore</code> split into two functions.</b>
+    <code>setScore(sc)</code> writes the current run's score;
+    <code>paintBestLabels()</code> writes the "best …" labels.
+    <code>endRun</code> used to call <code>setScore(sc)</code> twice —
+    once before <code>recordBest</code>, once after, with a comment
+    "refresh best labels" on the second call. Now it calls each
+    function once with clear intent.</li>
+</ul>
+
+<h3>Knowingly left in place</h3>
+
+<ul>
+  <li><b>Three near-identical <code>new Function</code> compiles.</b>
+    Three lines each, for <code>unlock</code> / <code>regulate</code> /
+    the run-button. Could be one
+    <code>compileFunction(src, name)</code>, but at three lines apiece
+    the helper would add as much code as it saves. Left inline.</li>
+
+  <li><b>The starter "wrong" answer for breach is hard-coded.</b> Fine
+    while the breach puzzle is the placeholder cipher. When the puzzle
+    grows past Pillar-3 placeholder, the seed source belongs with the
+    puzzle definition.</li>
+
+  <li><b>The terminal one-letter class scheme</b> (<code>u</code>,
+    <code>e</code>, <code>ok</code>, <code>w</code>, <code>d</code>)
+    is undocumented and easy to typo. Trade-off was: a constants block
+    would mean five exports for five callsites and not be obviously
+    clearer. Left as-is; consider an actual key/value lookup if the
+    class set grows.</li>
+
+  <li><b>The breach modal and library editor accept arbitrary JS.</b>
+    <code>new Function(...)</code> on player input. A deliberate
+    prototype choice: it keeps the editing surface a textarea, not a
+    sandboxed worker. The risk is small (an infinite loop in
+    <code>unlock</code> or <code>regulate</code> will hang the sim
+    <code>setInterval</code>; the try/catch handles thrown errors but
+    not loops). Worth a worker boundary if this ships, but not for the
+    prototype.</li>
+
+  <li><b>The "ram" axis is mock.</b> <code>2.0 + lines * 0.15</code>.
+    Terser code always wins it; it doesn't actually trade off against
+    the other axes. Worth a real model — even a simple one based on
+    how many <code>ns.greynet</code> calls the solver uses — so all
+    four axes feel meaningful. A design decision more than a code-quality
+    one.</li>
+
+  <li><b>Save points are scattered.</b> Six call sites for
+    <code>saveProgress()</code>. Easy to forget one when adding a new
+    persisted field. The fix would be a thin "<code>setState(...)</code>
+    wrapper that triggers a debounced save" — but that's a real design
+    change, not a cleanup, so it stayed.</li>
+
+  <li><b><code>blank()</code> turned out to be two-use, not one.</b>
+    The spec called it single-use; reading more carefully,
+    <code>checkSignature</code> also returns it as a "not enough data
+    yet" sentinel. Left as a small helper.</li>
+</ul>
+
+<h3>Things that are nicely done</h3>
+
+<ul>
+  <li>The split between progress and physiology is clear and durable.
+    Reload-mid-run behaviour is well-thought-through.</li>
+  <li>The idle heartbeat loop. The screen is never dead. Tiny detail,
+    big polish.</li>
+  <li>The squelch curve. "Snap on the beat, then hold" really does
+    look like blood, not animation.</li>
+  <li>The bloodflow trace mutating the actual ASCII art instead of
+    drawing on top. The whole heart is one object; the trace is part of
+    it, not a layer.</li>
+  <li>The detection cascade as a separate flow from the calm
+    budget-expiry verdict. Two kinds of failure, two kinds of feedback.</li>
+  <li>The earn-the-script gate. The whole shape of the game is
+    "automate something only after you understand it by hand."
+    <code>scriptUnlocked &amp;&amp; !usedScript</code> enforces it
+    cleanly.</li>
+  <li>The path resolver. Three command surfaces and the API all share
+    one function. One bug to fix, one place to fix it.</li>
+</ul>
+</section>
+
+<footer>
+  // GREYNET prototype technical spec · written for the index.html in
+  this folder · last reviewed against
+  <a href="https://github.com/JSHPhysics/greynet-bitburner-mod" style="color:var(--dim)">JSHPhysics/greynet-bitburner-mod</a>
+</footer>
+
+</main>
+
+<!-- =================================================================
+  DEMO JAVASCRIPT — small, self-contained versions of the prototype's
+  animations and behaviours. None of these touch the main game; they
+  just illustrate the same techniques inline.
+================================================================= -->
+<script>
+const $$ = id => document.getElementById(id);
+
+// ------ failsafe demo: bar flick + number flick + dipped value ------
+function flickFailsafeDemo(){
+  const bar = $$('demoBar');
+  const num = $$('demoVNum');
+  bar.classList.remove('flick'); void bar.offsetWidth; bar.classList.add('flick');
+  num.classList.remove('numflick'); void num.offsetWidth; num.classList.add('numflick');
+  num.textContent = '70';
+  setTimeout(() => { num.textContent = '72'; }, 110);
+}
+
+// ------ pfight demo on a hotzone --------------------------------
+function fightDemo(){
+  const hz = $$('demoHZ');
+  hz.classList.remove('fightingD'); void hz.offsetWidth; hz.classList.add('fightingD');
+}
+
+// ------ bar flick standalone ------------------------------------
+function flickBarDemo(){
+  const b = $$('demoFlickBar');
+  b.classList.remove('flick'); void b.offsetWidth; b.classList.add('flick');
+}
+function numFlickDemo(){
+  const n = $$('demoNumFlick');
+  n.classList.remove('numflick'); void n.offsetWidth; n.classList.add('numflick');
+}
+
+// ------ mini cascade demo ---------------------------------------
+const CASCADE_DEMO = [
+  {t:'ok',  m:'> monitoring cardiac log...'},
+  {t:'hi',  m:'> rapid BPM decline detected'},
+  {t:'',    m:'> beginning diagnostics...'},
+  {t:'hi',  m:'> conclusion: malicious code injection'},
+  {t:'crit',m:'> OUTBOUND TRACE STARTED'},
+];
+let cascadeAbort = null;
+function resetCascadeDemo(){
+  if(cascadeAbort) cascadeAbort();
+  $$('cascade-body').textContent = '';
+  $$('cascade-fill').style.width = '0%';
+  $$('cascade-pct').textContent = '0%';
+}
+function playCascadeDemo(){
+  resetCascadeDemo();
+  let cancelled = false;
+  cascadeAbort = () => { cancelled = true; };
+  const body = $$('cascade-body');
+  const fill = $$('cascade-fill');
+  const pct  = $$('cascade-pct');
+  let trace = 0;
+  const traceTimer = setInterval(() => {
+    if(cancelled){ clearInterval(traceTimer); return; }
+    trace = Math.min(95, trace + 1.1);
+    fill.style.width = trace + '%';
+    pct.textContent = Math.floor(trace) + '%';
+  }, 110);
+  let li = 0;
+  const typeLine = (line, cb) => {
+    const span = document.createElement('span');
+    if(line.t) span.className = line.t;
+    span.classList.add('caret');
+    body.appendChild(span);
+    let i = 0;
+    const step = () => {
+      if(cancelled) return;
+      if(i < line.m.length){
+        span.textContent = line.m.slice(0, ++i);
+        setTimeout(step, 14 + Math.random()*22);
+      } else {
+        span.classList.remove('caret');
+        body.appendChild(document.createTextNode('\n'));
+        cb();
+      }
+    };
+    step();
+  };
+  const next = () => {
+    if(cancelled) return;
+    if(li >= CASCADE_DEMO.length){
+      clearInterval(traceTimer);
+      return;
+    }
+    typeLine(CASCADE_DEMO[li++], () => setTimeout(next, 240 + Math.random()*120));
+  };
+  next();
+}
+
+// ------ mini heart demo -----------------------------------------
+// a tiny 9-line ASCII heart; same beat curve as drawHeart()
+const MINI_HEART = [
+"   ###    ###   ",
+" #######  ####### ",
+"################# ",
+"################ ",
+" ############## ",
+"  ############  ",
+"   ##########   ",
+"     ######     ",
+"       ##       ",
+];
+let demoBpm = 72;
+let demoBeat = 0;
+function setHeartDemoBpm(bpm){ demoBpm = bpm; }
+function tickMiniHearts(){
+  for(const id of ['demoHeart', 'demoHeart2']){
+    const el = $$(id);
+    if(!el) continue;
+    if(!el.dataset.built){
+      el.textContent = MINI_HEART.join('\n');
+      el.dataset.built = '1';
+    }
+    if(demoBpm < 24){
+      el.style.transform = 'scale(1)';
+      el.style.filter = 'brightness(0.5)';
+      el.classList.add('flatD');
+      continue;
+    }
+    el.classList.remove('flatD');
+    const phase = demoBeat % 1;
+    const pulse = Math.exp(-phase*6)*0.85 + Math.exp(-((phase-0.16)**2)*40)*0.4;
+    const scale  = 1 + pulse*0.05;
+    const bright = 0.72 + pulse*0.6;
+    el.style.transform = 'scale(' + scale.toFixed(4) + ')';
+    el.style.filter    = 'brightness(' + bright.toFixed(3) + ')';
+  }
+  demoBeat += demoBpm / 600;
+}
+setInterval(tickMiniHearts, 55);
+
+// initial paint
+tickMiniHearts();
+</script>
+
+</body>
+</html>

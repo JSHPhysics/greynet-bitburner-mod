@@ -39,6 +39,15 @@
   #zoomctl button{padding:2px 8px;font-size:11px;line-height:1.2}
   #zoom-val{font-size:10px;color:var(--dim);min-width:34px;text-align:center}
 
+  /* meta links in the top strip — small text-style buttons that let the
+     player reopen the difficulty picker or replay the handler brief */
+  #meta-links{display:flex;align-items:center;gap:6px}
+  #meta-links button{background:transparent;border:none;padding:0;
+    color:var(--dim);font-family:var(--mono);font-size:10px;
+    letter-spacing:1px;cursor:pointer;transition:color .12s,text-shadow .12s}
+  #meta-links button:hover{color:var(--hi);text-shadow:0 0 6px rgba(125,255,138,.4)}
+  #meta-links .sep{color:var(--edge2);font-size:10px}
+
   /* ===== connected view: ascii fills upper area, terminal a bottom bar ===== */
   /* conn is a ROW: left column (heart over terminal) + full-height sidebar */
   #conn{flex:1;min-height:0;display:flex;flex-direction:row}
@@ -167,6 +176,55 @@
   .modal textarea{width:100%;background:#010801;border:1px solid var(--edge2);color:var(--hi);
     font-family:var(--mono);font-size:12px;padding:8px;border-radius:2px;line-height:1.45;tab-size:2}
 
+  /* difficulty selection cards on the first-visit modal */
+  .diffchoice{border:1px solid var(--edge2);border-radius:3px;
+    padding:14px 16px;margin:12px 0;cursor:pointer;
+    transition:border-color .12s,background .12s,box-shadow .12s}
+  .diffchoice:hover{border-color:var(--bright);background:rgba(125,255,138,.05);
+    box-shadow:0 0 14px rgba(125,255,138,.2)}
+  .diffchoice .dt{color:var(--bright);font-size:14px;letter-spacing:3px;
+    text-shadow:0 0 6px rgba(125,255,138,.4);margin-bottom:6px}
+  .diffchoice .dd{color:var(--ink);font-size:12px;line-height:1.5}
+
+  /* the animated "uplink established" lines that type into the diff modal */
+  #diff-typeout{margin:4px 0 14px;min-height:42px;font-size:13px;
+    line-height:1.5;color:var(--bright);white-space:pre-wrap;
+    text-shadow:0 0 6px rgba(125,255,138,.25)}
+  /* the rest of the diff modal stays hidden while the typing plays */
+  #diff-body.preroll{visibility:hidden}
+
+  /* ===== handler-character message styling =====
+     The handler is a character: the contact who briefs you on the job
+     and explains failures. Their messages are coloured comms-blue so
+     they read as the same person in both the intro brief and the
+     post-mortem — distinct from the green system colour and the red
+     alarm colour the unit itself uses. */
+  .modal.handlermsg{
+    border-color:#3a6fa8;
+    box-shadow:0 0 44px rgba(125,196,255,.18)}
+  .modal.handlermsg h3{
+    color:#dbe9ff;
+    text-shadow:0 0 8px rgba(125,196,255,.4)}
+  .modal.handlermsg p{color:#bdd2ec}
+  .modal.handlermsg .mt{color:#7dc4ff}
+  .modal.handlermsg b{color:#e8f0ff}
+  .modal.handlermsg code{color:#9ed1ff;background:rgba(125,196,255,.10)}
+  .modal.handlermsg .ph{border-top-color:#1e3a5a;color:#557ba1}
+  /* the "try X then Y" command hint at the foot of a handler message —
+     soft blue dim so it sits below the prose, in the same family */
+  .modal.handlermsg .small{color:#557ba1}
+  .modal.handlermsg button.go{border-color:#7dc4ff;color:#7dc4ff}
+  .modal.handlermsg button.go:hover:not(:disabled){
+    background:rgba(125,196,255,.10);color:#cfe4ff;
+    box-shadow:0 0 8px rgba(125,196,255,.35)}
+
+  /* body region for the handler intro — paragraphs type into here, then
+     the trailing prototype note and JACKED IN button fade in */
+  #intro-body{min-height:1em}
+  #intro-body p{margin-bottom:11px}
+  .intro-after{opacity:0;transition:opacity .3s ease}
+  .intro-after.show{opacity:1}
+
   /* ===== syntax highlighting ==========================================
      A <pre.hl> sits exactly behind the textarea showing coloured code;
      the textarea on top has transparent text but a visible caret. Both
@@ -273,8 +331,9 @@
   #detect-log .hi{color:#ffeaea;text-shadow:0 0 6px rgba(255,80,90,.6)}
   #detect-log .crit{color:var(--red);font-weight:700;
     text-shadow:0 0 8px rgba(224,85,106,.7)}
-  /* the typing caret while a line streams in */
-  #detect-log .caret::after{content:'▌';animation:caret 0.7s infinite}
+  /* the typing caret while a line streams in — used by the detection
+     cascade and the operative-connection welcome on the diff modal */
+  .caret::after{content:'▌';animation:caret 0.7s infinite}
   @keyframes caret{0%,49%{opacity:1}50%,100%{opacity:0}}
 
   .detect-tracewrap{margin-top:16px}
@@ -300,51 +359,49 @@
 </head>
 <body>
 
-<!-- ===== ONBOARDING ===== -->
-<div class="scrim" id="scrim-intro">
+<!-- ===== DIFFICULTY (first visit, or via "change difficulty" link) =====
+     The welcome line types in like the detection cascade does, then the
+     body underneath is revealed. On repeat opens (via the meta link) the
+     animation is skipped — see openDiffModal(animate) in the script. -->
+<div class="scrim hide" id="scrim-diff">
   <div class="modal">
     <h3>GREYNET</h3>
-    <div class="mt">// OPERATING THEATRE — contract GN-2241 "Quiet Hours" — Tier T2</div>
-    <p>You are a contractor. A client wants the target's <b>mechanical heart</b>
-      to fail. The hard part is that an autopsy will check this device's
-      cardiac log — so the failure has to <b>read as natural decline</b>,
-      not as tampering. The implant runs on four networked controllers.
-      You break it by <b>writing code</b>.</p>
-    <p><b>The win condition (sidebar, right):</b> drive the heart into
-      arrest while the cardiac log shows what a real bradycardic decline
-      looks like — rate <b>steadily falling</b>, never recovering, with
-      no sudden cliffs, smooth rhythm, contraction tracking rate down
-      together. All five signature clauses must hold at the moment the
-      heart reaches arrest (BPM ≤ 42).</p>
-    <p><b>How you lose:</b> the unit's <b>trace meter</b> watches for
-      tampering. Jam the rate sharply, leave amplitude high while rate
-      crashes, spike the variance — any of that pegs the trace and the
-      run is flagged as an obvious kill. You also lose if you run out of
-      cycles without reaching arrest.</p>
-    <p>You work through the <b>terminal</b> at the bottom of the screen:</p>
-    <div class="verb"><span class="n">breach &lt;node&gt;</span>
-      <span>crack a node's port — a coding puzzle.</span></div>
-    <div class="verb"><span class="n">cd / ls / cat</span>
-      <span>navigate breached nodes and read their docs.
-        <b>The docs explain how the system works</b> — read them.</span></div>
-    <div class="verb"><span class="n">nano &lt;file&gt;</span>
-      <span>edit a config file — to defeat a node's countermeasure.</span></div>
-    <div class="verb"><span class="n">inject</span>
-      <span>open the script editor and write <code class="k">regulate()</code> —
-        the routine imports it each cardiac cycle.</span></div>
-    <div class="verb"><span class="n">run / stop</span>
-      <span>execute the routine; drive the heart to the signature.</span></div>
-    <div class="verb"><span class="n">script</span>
-      <span><b>locked</b> until you beat the contract by hand — then it
-        opens <code class="k">solver.js</code> to automate the whole thing
-        against the <code class="k">ns.greynet</code> API.</span></div>
-    <p style="margin-top:12px">Do it by hand first — then <b>earn the
-      script</b>. Every solve is <b>scored on four axes</b> — time, trace,
-      RAM, lines of code — for you to beat next run. Type
-      <code class="k">help</code> any time.</p>
-    <div class="ph">Prototype — the breach puzzle is a placeholder for the full
+    <div class="mt">// OPERATIVE CONNECTION</div>
+    <pre id="diff-typeout"></pre>
+    <div id="diff-body">
+      <p>This sets how much the cardiac unit tells you about the kill. You
+        can wipe progress and start over with <code class="k">newgame</code>
+        at any time, or use <b>change difficulty</b> at the top of the
+        screen.</p>
+      <div class="diffchoice" id="diff-default">
+        <div class="dt">DEFAULT</div>
+        <div class="dd">You'll see the full list of conditions the kill needs
+          to satisfy. The unit briefs you on exactly what counts as a natural
+          decline — your job is to engineer it.</div>
+      </div>
+      <div class="diffchoice" id="diff-hard">
+        <div class="dt">HARD</div>
+        <div class="dd">You'll see only the two top-line objectives — stop
+          the heart, don't get caught. The rules of the kill are hidden in
+          the docs on each node, and you have to work them out yourself.
+          Proper detective work.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ONBOARDING — handler brief, second modal in the splash flow =====
+     The handler "types" each paragraph in via openHandlerIntro() — see
+     the script below. Paragraphs are populated into #intro-body, then
+     the .intro-after elements fade in once the last paragraph is done. -->
+<div class="scrim hide" id="scrim-intro">
+  <div class="modal handlermsg">
+    <h3>GREYNET</h3>
+    <div class="mt">// HANDLER &rarr; CONTRACTOR // GN-2241 "Quiet Hours" // T2</div>
+    <div id="intro-body"></div>
+    <div class="ph intro-after">Prototype — the breach puzzle is a placeholder for the full
       breach minigame (Pillar 3). Everything else is the intended loop.</div>
-    <div class="mbtn"><button class="go" id="deploy">▶ CONNECT TO TARGET</button></div>
+    <div class="mbtn intro-after"><button class="go" id="deploy">▶ JACKED IN</button></div>
   </div>
 </div>
 
@@ -523,9 +580,9 @@ log('recon done — now write the breach, config and library steps.');</textarea
   </div>
 </div>
 
-<!-- ===== POST-MORTEM — explains what tripped the system ===== -->
+<!-- ===== POST-MORTEM — the handler explains what tripped the unit ===== -->
 <div class="scrim hide" id="scrim-post">
-  <div class="modal">
+  <div class="modal handlermsg">
     <h3 id="pm-title">// what just happened</h3>
     <div id="pm-body"></div>
     <div class="mbtn">
@@ -539,6 +596,11 @@ log('recon done — now write the breach, config and library steps.');</textarea
   <h1>GREYNET</h1>
   <span class="sub">// OPERATING THEATRE</span>
   <span class="tag">GN-2241 · "QUIET HOURS" · T2 · L4</span>
+  <span id="meta-links">
+    <button id="link-diff"  title="open the difficulty picker again">change difficulty</button>
+    <span class="sep">·</span>
+    <button id="link-intro" title="show the handler brief again">replay intro</button>
+  </span>
   <span id="zoomctl">
     <button id="zoom-out" title="smaller">A−</button>
     <span id="zoom-val">100%</span>
@@ -645,6 +707,23 @@ log('recon done — now write the breach, config and library steps.');</textarea
 const $=id=>document.getElementById(id);
 const clamp=(v,lo,hi)=>v<lo?lo:v>hi?hi:v;
 
+// ---- tuning --------------------------------------------------------
+// Named values for the numbers that set the game's feel. Anything used
+// in 2+ places lives here; single-use thresholds stay inline next to
+// the logic that owns them. The whole game can be re-balanced by
+// editing this block.
+const TUNING={
+  TICK_MS:           55,     // simulation interval (ms per cardiac cycle)
+  TICK_BUDGET:       2400,   // cycles per contract before the run times out
+  HEALTHY_BPM:       72,     // resting rate, failsafe backup, "tracks" basis
+  ARREST_BPM:        42,     // win threshold (signature clause #5)
+  CLIFF_DROP:        14,     // single-cycle BPM drop that fails the run
+  SMOOTH_VAR:        0.15,   // rhythm-variance ceiling (signature clause #3)
+  TRACE_SCRUTINY:    33,     // amber-band lower edge on the trace meter
+  TRACE_FLAGGED:     66,     // red-band lower edge on the trace meter
+  TRACE_FLAG_TICKS:  60,     // ticks of held FLAGGED before the run ends
+};
+
 // ---- state ---------------------------------------------------------
 const NODES={
   n_rate:  {name:'RATE CTRL',   state:'SEALED'},
@@ -652,9 +731,20 @@ const NODES={
   n_amp:   {name:'AMP CTRL',    state:'SEALED'},
   n_cond:  {name:'CONDUCTION',  state:'SEALED'},
 };
-const failsafe={enabled:true,backup:72};
+const failsafe={enabled:true,backup:TUNING.HEALTHY_BPM};
 const conduction={drift:true};
 let best={time:null,trace:null,ram:null,loc:null};   // four-axis personal bests
+// HARD mode hides the per-clause sidebar checklist — the player only sees
+// "stop the heart / don't get caught" and has to read the docs to discover
+// what counts as a clean kill. Chosen on first visit, persisted in the save.
+let hardMode=false;
+// Splash-version gating: existing saves predate the new splash, so we
+// force-show it once for every user whose save has a different number.
+// Bump SPLASH_VERSION to force a re-show for everyone after a future
+// rewrite of the briefing. splashSeen tracks whether the CURRENT user
+// has already been through it.
+const SPLASH_VERSION=1;
+let splashSeen=false;
 
 const BREACH={
   n_rate:  {rule:n=>n*2+1, shown:[[3,7],[5,11],[8,17]], test:[4,6,9], family:'cipher_linear'},
@@ -811,6 +901,31 @@ function cfgText(file){
   return null;
 }
 
+// Parse a config file's text and apply it to the game state. The
+// symmetric inverse of cfgText(): nano-save and ns.greynet.writeConfig
+// both go through this so the parsing rules live in one place. Returns
+// {ok:true, summary, active} on success, {ok:false, error} on failure.
+function parseConfig(file,txt){
+  if(file==='emergency-settings.cfg'){
+    const en=/FAILSAFE_ENABLED\s*=\s*(true|false)/i.exec(txt);
+    const bk=/BACKUP_SETPOINT\s*=\s*(-?\d+(?:\.\d+)?)/i.exec(txt);
+    if(!en||!bk) return {ok:false,error:'parse error — keep both lines'};
+    failsafe.enabled=/true/i.test(en[1]);
+    failsafe.backup=clamp(+bk[1],0,200);
+    return {ok:true, active:failsafe.enabled,
+      summary:'failsafe '+(failsafe.enabled?'ENABLED':'DISABLED')+
+              ', backup '+failsafe.backup};
+  }
+  if(file==='drift-comp.cfg'){
+    const dc=/DRIFT_COMPENSATION\s*=\s*(enabled|disabled)/i.exec(txt);
+    if(!dc) return {ok:false,error:'parse error — keep the DRIFT line'};
+    conduction.drift=/enabled/i.test(dc[1]);
+    return {ok:true, active:conduction.drift,
+      summary:'drift '+(conduction.drift?'ENABLED':'DISABLED')};
+  }
+  return {ok:false,error:file+' is not a config file'};
+}
+
 // ---- the heart — density-mapped ASCII ------------------------------
 // HEART_ART is the artwork (kept pristine — no tokens injected into it).
 // The four node panels are drawn as small INSET overlays positioned on
@@ -899,8 +1014,8 @@ let scriptUnlocked=false, usedScript=false;
 let flaggedTicks=0;                            // consecutive flagged-band ticks
 let flaggedWarned=false;                       // one-shot terminal warning
 function freshPatient(){
-  hw={bpm:72,rhythmVar:0.05,amp:1.00,cond:120};
-  setp={rate:72,gain:1.00};
+  hw={bpm:TUNING.HEALTHY_BPM,rhythmVar:0.05,amp:1.00,cond:120};
+  setp={rate:TUNING.HEALTHY_BPM,gain:1.00};
   tick=0;stream=[];reviewVal=0;beatPhase=0;running=false;
   flaggedTicks=0;flaggedWarned=false;
   drawHeart();relayoutHeart();paintTelemetry();paintConditions(blank());
@@ -952,6 +1067,35 @@ function resolvePath(arg){
   return { node: out[0]||null, file: out[1]||null, extra: out.length>2 };
 }
 
+// Common breach gate for directory commands. Returns true if the node
+// exists and is breached; otherwise prints the cmd-prefixed error and
+// returns false. ls and cd both use this so the error messages stay in
+// lockstep.
+function requireBreachedNode(cmd, node, displayArg){
+  if(!node||!NODES[node]){
+    tprint(cmd+': unknown node "'+(displayArg||'')+'"','e'); return false;
+  }
+  if(NODES[node].state==='SEALED'){
+    tprint(cmd+': '+node+' is sealed — breach it first','e'); return false;
+  }
+  return true;
+}
+
+// Resolve `arg` to a file on a breached node. Prints the cmd-prefixed
+// error and returns null on any failure (missing arg, directory not file,
+// unknown / sealed node, file not on that node). On success returns
+// {node, file, ...}. cat and nano go through this.
+function requireBreachedFile(cmd, arg){
+  if(!arg){ tprint(cmd+': name a file','e'); return null; }
+  const r=resolvePath(arg);
+  if(!r.file){ tprint(cmd+': '+arg+' is a directory, not a file','e'); return null; }
+  if(!requireBreachedNode(cmd, r.node, arg)) return null;
+  if(!filesFor(r.node).includes(r.file)){
+    tprint(cmd+': '+r.file+' not found on '+r.node,'e'); return null;
+  }
+  return r;
+}
+
 const HELP_LINES=[
   'commands:',
   '  scan              list nodes + state',
@@ -995,10 +1139,7 @@ const CMDS={
                NODES[id].state==='SEALED'?'d':'ok');
       return;
     }
-    if(!NODES[r.node]){ tprint('ls: unknown node "'+r.node+'"','e');return; }
-    if(NODES[r.node].state==='SEALED'){
-      tprint('ls: '+r.node+' is sealed — breach it first','e');return;
-    }
+    if(!requireBreachedNode('ls',r.node,r.node)) return;
     tprint('/'+r.node+' — files:');
     filesFor(r.node).forEach(f=>tprint('  '+f,'ok'));
   },
@@ -1009,40 +1150,17 @@ const CMDS={
     if(r.extra||r.file){
       tprint('cd: '+a+' is not a directory (only nodes can be entered)','e');return;
     }
-    if(!r.node||!NODES[r.node]){
-      tprint('cd: unknown node "'+a+'"','e');return;
-    }
-    if(NODES[r.node].state==='SEALED'){
-      tprint('cd: '+r.node+' is sealed — breach it first','e');return;
-    }
+    if(!requireBreachedNode('cd',r.node,a)) return;
     setCwd('/'+r.node);
   },
   pwd(){ tprint(cwd); },
   cat(a){
-    if(!a){ tprint('cat: name a file','e');return; }
-    const r=resolvePath(a);
-    if(!r.file){ tprint('cat: '+a+' is a directory, not a file','e');return; }
-    if(!r.node||!NODES[r.node]){ tprint('cat: '+a+' — no such node','e');return; }
-    if(NODES[r.node].state==='SEALED'){
-      tprint('cat: '+r.node+' is sealed — breach it first','e');return;
-    }
-    if(!filesFor(r.node).includes(r.file)){
-      tprint('cat: '+r.file+' not found on '+r.node,'e');return;
-    }
+    const r=requireBreachedFile('cat',a); if(!r) return;
     // blank lines must keep their height so structured docs read right
     (DOCS[r.file]||cfgText(r.file)).split('\n').forEach(l=>tprint(l||'\u00a0'));
   },
   nano(a){
-    if(!a){ tprint('nano: name a file','e');return; }
-    const r=resolvePath(a);
-    if(!r.file){ tprint('nano: '+a+' is a directory, not a file','e');return; }
-    if(!r.node||!NODES[r.node]){ tprint('nano: '+a+' — no such node','e');return; }
-    if(NODES[r.node].state==='SEALED'){
-      tprint('nano: '+r.node+' is sealed — breach it first','e');return;
-    }
-    if(!filesFor(r.node).includes(r.file)){
-      tprint('nano: '+r.file+' not found on '+r.node,'e');return;
-    }
+    const r=requireBreachedFile('nano',a); if(!r) return;
     if(!cfgText(r.file)){ tprint('nano: '+r.file+' is read-only','e');return; }
     openNano(r.node,r.file);
   },
@@ -1154,21 +1272,12 @@ function openNano(owner,file){
 }
 $('nx-cancel').onclick=()=>{ $('scrim-nano').classList.add('hide');$('termin').focus(); };
 $('nx-save').onclick=()=>{
-  const txt=$('nx-code').value;
-  if(nanoFile==='emergency-settings.cfg'){
-    const en=/FAILSAFE_ENABLED\s*=\s*(true|false)/i.exec(txt);
-    const bk=/BACKUP_SETPOINT\s*=\s*(-?\d+(?:\.\d+)?)/i.exec(txt);
-    if(!en||!bk){ $('nx-res').innerHTML='<span style="color:var(--red)">parse error — keep both lines</span>';return; }
-    failsafe.enabled=/true/i.test(en[1]);failsafe.backup=clamp(+bk[1],0,200);
-    tprint('// saved emergency-settings.cfg — failsafe '+(failsafe.enabled?'ENABLED':'DISABLED')+
-      ', backup '+failsafe.backup,failsafe.enabled?'w':'ok');
-  }else if(nanoFile==='drift-comp.cfg'){
-    const dc=/DRIFT_COMPENSATION\s*=\s*(enabled|disabled)/i.exec(txt);
-    if(!dc){ $('nx-res').innerHTML='<span style="color:var(--red)">parse error — keep the DRIFT line</span>';return; }
-    conduction.drift=/enabled/i.test(dc[1]);
-    tprint('// saved drift-comp.cfg — drift '+(conduction.drift?'ENABLED':'DISABLED'),
-      conduction.drift?'w':'ok');
+  const r=parseConfig(nanoFile,$('nx-code').value);
+  if(!r.ok){
+    $('nx-res').innerHTML='<span style="color:var(--red)">'+r.error+'</span>';
+    return;
   }
+  tprint('// saved '+nanoFile+' — '+r.summary, r.active?'w':'ok');
   $('scrim-nano').classList.add('hide');$('termin').focus();
   saveProgress();
 };
@@ -1206,7 +1315,7 @@ $('run').onclick=()=>{
   if(NODES.n_rate.state==='BREACHED') setNodeState('n_rate','INJECTED');
   running=true;$('run').disabled=true;$('stop').disabled=false;
   tprint('// routine running — regulate() imported','ok');
-  sim=setInterval(stepHeart,55);
+  sim=setInterval(stepHeart,TUNING.TICK_MS);
 };
 $('stop').onclick=()=>{ haltSim();tprint('// routine stopped','d'); };
 
@@ -1227,7 +1336,7 @@ function reflectUnlock(){
 function fullReset(){
   haltSim();
   for(const id in NODES) NODES[id].state='SEALED';
-  failsafe.enabled=true; failsafe.backup=72;
+  failsafe.enabled=true; failsafe.backup=TUNING.HEALTHY_BPM;
   conduction.drift=true;
   lockEditor();
   freshPatient();
@@ -1297,16 +1406,17 @@ function stepHeart(){
   //    stopped quietly.
   if(stream.length>=2){
     const drop=stream[stream.length-2].bpm-hw.bpm;
-    if(drop>14){ endRun(false,'cliff',{drop:drop.toFixed(1)}); return; }
+    if(drop>TUNING.CLIFF_DROP){ endRun(false,'cliff',{drop:drop.toFixed(1)}); return; }
   }
   // 2. TRACE PINNED: trace meter held at FLAGGED for long enough that
   //    the unit's review subsystem escalates. Visible to the player
   //    because the meter pegs red and the alert flashes.
-  if(reviewVal>66) flaggedTicks++; else flaggedTicks=Math.max(0,flaggedTicks-2);
-  if(flaggedTicks>60){ endRun(false,'flagged',{}); return; }
+  if(reviewVal>TUNING.TRACE_FLAGGED) flaggedTicks++;
+  else flaggedTicks=Math.max(0,flaggedTicks-2);
+  if(flaggedTicks>TUNING.TRACE_FLAG_TICKS){ endRun(false,'flagged',{}); return; }
 
   if(res.win){ endRun(true);return; }
-  if(tick>=2400){ endRun(false,'budget',{}); return; }
+  if(tick>=TUNING.TICK_BUDGET){ endRun(false,'budget',{}); return; }
 }
 let fsTimer=null;
 function flashFailsafe(dippedBpm){
@@ -1340,11 +1450,11 @@ function checkSignature(){
   let mono=true;
   for(let i=1;i<n;i++){ if(bpm[i]>bpm[i-1]+0.6){mono=false;break;} }
   const fallen=s[0].bpm-cur.bpm>4;
-  const noCliff=bpm.every((v,i)=>i===0||bpm[i-1]-v<14);
+  const noCliff=bpm.every((v,i)=>i===0||bpm[i-1]-v<TUNING.CLIFF_DROP);
   const gradual=mono&&fallen&&noCliff;
-  const smooth=s.every(x=>x.rhythmVar<0.15);
-  const tracks=Math.abs(cur.amp/Math.max(cur.bpm,1)-(1/72))<0.0028;
-  const arrest=cur.bpm<=42;
+  const smooth=s.every(x=>x.rhythmVar<TUNING.SMOOTH_VAR);
+  const tracks=Math.abs(cur.amp/Math.max(cur.bpm,1)-(1/TUNING.HEALTHY_BPM))<0.0028;
+  const arrest=cur.bpm<=TUNING.ARREST_BPM;
   const c=[mono,gradual,smooth,tracks,arrest];
   return {c,win:c.every(Boolean)};
 }
@@ -1360,7 +1470,6 @@ function checkSignature(){
 const PANEL_STATE={
   SEALED:   {label:'SEALED',  col:'var(--red)'},
   BREACHED: {label:'BREACHED',col:'var(--warn)'},
-  CLEARED:  {label:'CLEARED', col:'var(--cyan)'},
   INJECTED: {label:'INJECTED',col:'var(--bright)'},
 };
 const PANEL_LABEL={ n_rate:'RATE CTRL', n_rhythm:'RHYTHM CTRL',
@@ -1582,17 +1691,17 @@ function paintTelemetry(){
   $('v_var').textContent=hw.rhythmVar.toFixed(3);
   $('v_amp').textContent=hw.amp.toFixed(2);
   $('v_cond').textContent=hw.cond.toFixed(0);
-  $('v_tick').textContent=tick+' / 2400';
+  $('v_tick').textContent=tick+' / '+TUNING.TICK_BUDGET;
 
   // BPM — a vital sign: healthy green, amber as it falls, red at arrest range
   $('f_bpm').style.width=clamp(hw.bpm/160*100,2,100)+'%';
-  let bpmCol = hw.bpm>=60 ? '#5fe070' : hw.bpm>=42 ? 'var(--warn)' : 'var(--red)';
+  let bpmCol = hw.bpm>=60 ? '#5fe070' : hw.bpm>=TUNING.ARREST_BPM ? 'var(--warn)' : 'var(--red)';
   $('f_bpm').style.background=bpmCol;
   $('v_bpm').style.color=bpmCol;
 
-  // rhythm variance — cyan when smooth, red once it crosses the 0.15 line
+  // rhythm variance — cyan when smooth, red once it crosses the SMOOTH_VAR line
   $('f_var').style.width=clamp(hw.rhythmVar/0.4*100,2,100)+'%';
-  let varCol = hw.rhythmVar<0.15 ? 'var(--cyan)' : 'var(--red)';
+  let varCol = hw.rhythmVar<TUNING.SMOOTH_VAR ? 'var(--cyan)' : 'var(--red)';
   $('f_var').style.background=varCol;
   $('v_var').style.color=varCol;
 
@@ -1613,8 +1722,8 @@ function paintTelemetry(){
   // resulting end-run failure
   $('f_rev').style.width=clamp(reviewVal,4,100)+'%';
   let band='nominal',col='var(--bright)';
-  if(reviewVal>33){band='scrutiny';col='var(--warn)';}
-  if(reviewVal>66){
+  if(reviewVal>TUNING.TRACE_SCRUTINY){band='scrutiny';col='var(--warn)';}
+  if(reviewVal>TUNING.TRACE_FLAGGED){
     band='FLAGGED';col='var(--red)';
     if(!flaggedWarned && running){
       tprint('// ⚠ TRACE FLAGGED — sustained visible tampering will end the run','e');
@@ -1624,19 +1733,72 @@ function paintTelemetry(){
   $('f_rev').style.background=col;$('v_rev').textContent=band;$('v_rev').style.color=col;
 }
 function paintConditions(res){
+  // Hard mode hides the per-clause sidebar checklist entirely — its boxes
+  // aren't in the DOM, and the player isn't meant to see them tick.
+  if(hardMode) return;
   for(let i=0;i<5;i++){
     const el=$('c'+i);
+    if(!el) continue;
     el.classList.toggle('ok',!!res.c[i]);
     el.querySelector('.box').textContent=res.c[i]?'✓':'·';
   }
 }
 
+// Build the top sidebar panel for the current difficulty mode. Default
+// mode shows the five signature clauses (with live ✓/· state driven by
+// paintConditions). Hard mode shows just two top-line objectives and
+// points the player at the docs to work out what counts as a clean kill.
+function renderObjectives(){
+  const sect=document.querySelector('.sidebar .sect');
+  if(!sect) return;
+  if(hardMode){
+    sect.innerHTML=
+      '<h3>Objectives — HARD</h3>'+
+      '<div class="cond"><span class="box">·</span>'+
+        '<span><b>1. Stop the heart.</b></span></div>'+
+      '<div class="cond"><span class="box">·</span>'+
+        '<span><b>2. Don\'t trigger any alarms or failsafes.</b></span></div>'+
+      '<p class="small" style="color:var(--dim);margin-top:10px">'+
+        'No checklist this run. The cardiac log defines what counts as '+
+        'natural decline — and the unit&rsquo;s docs explain how every '+
+        'reading behaves. Read them. <code class="k">cat</code> is your '+
+        'friend.</p>';
+  }else{
+    sect.innerHTML=
+      '<h3>Failure signature — T2, all five</h3>'+
+      '<p class="small" style="color:var(--dim);margin:-2px 0 8px">'+
+        'The autopsy must read this as natural bradycardic decline. '+
+        'All five must hold at arrest.</p>'+
+      '<div class="cond" id="c0"><span class="box">·</span>'+
+        '<span><b>BPM falling</b> &mdash; never rises</span></div>'+
+      '<div class="cond" id="c1"><span class="box">·</span>'+
+        '<span><b>No cliffs</b> &mdash; fallen, no sharp drops per cycle</span></div>'+
+      '<div class="cond" id="c2"><span class="box">·</span>'+
+        '<span><b>Variance &lt; 0.15</b> &mdash; rhythm stays smooth</span></div>'+
+      '<div class="cond" id="c3"><span class="box">·</span>'+
+        '<span><b>Amplitude tracks rate</b> &mdash; both fall together</span></div>'+
+      '<div class="cond" id="c4"><span class="box">·</span>'+
+        '<span><b>Arrest</b> &mdash; BPM &le; 42</span></div>';
+  }
+}
+
 // ---- four-axis scoring ---------------------------------------------
+const SCORE_AXES=['time','trace','ram','loc'];
+// Write the current run's score into the sidebar's "this run" cells.
+// Pass null to clear. Always repaints the "best" labels too, since the
+// two readings share a row and the bests are cheap to redraw.
 function setScore(sc){
-  const fld=['time','trace','ram','loc'];
-  if(!sc){ fld.forEach(k=>{$('s_'+k).textContent='—';}); }
-  else fld.forEach(k=>{ $('s_'+k).textContent=sc[k]; });
-  fld.forEach(k=>{ $('b_'+k).textContent='best '+(best[k]==null?'—':best[k]); });
+  if(!sc) SCORE_AXES.forEach(k=>{$('s_'+k).textContent='—';});
+  else    SCORE_AXES.forEach(k=>{$('s_'+k).textContent=sc[k];});
+  paintBestLabels();
+}
+// Write only the "best …" labels. Used after recordBest() updates the
+// bests in place, so the new label appears without re-writing the
+// current-run cells.
+function paintBestLabels(){
+  SCORE_AXES.forEach(k=>{
+    $('b_'+k).textContent='best '+(best[k]==null?'—':best[k]);
+  });
 }
 function computeScore(){
   // exec time = cycles used; trace = peak review; ram = mock from LoC;
@@ -1666,8 +1828,8 @@ function endRun(win,reason,info){
   if(win){
     const sc=computeScore();
     setScore(sc);
-    const improved=recordBest({time:sc.time,trace:sc.trace,ram:sc.ram,loc:sc.loc});
-    setScore(sc); // refresh best labels
+    const improved=recordBest(sc);
+    paintBestLabels();      // refresh after recordBest mutated `best`
     $('rx-title').textContent='✓ CONTRACT COMPLETE';
     $('rx-sub').textContent='// run logged as SENESCENT DECLINE';
     $('rx-body').innerHTML=
@@ -1714,7 +1876,7 @@ function endRun(win,reason,info){
     $('rx-title').textContent='✗ CYCLE BUDGET EXPIRED';
     $('rx-sub').textContent='// the signature was not met in time';
     $('rx-body').innerHTML='<div class="verdict fail">CONTRACT FAILED</div>'+
-      '<p>The run hit the 2400-cycle budget without all five '+
+      '<p>The run hit the '+TUNING.TICK_BUDGET+'-cycle budget without all five '+
       'signature clauses holding at once. Check which clauses stayed '+
       'red in the sidebar, and re-read the relevant node docs — they '+
       'name the field, the units, and what each one is sensitive to.</p>';
@@ -1759,29 +1921,29 @@ const CASCADE_SCRIPTS={
 };
 const POSTMORTEM={
   cliff:{
-    title:'// rapid BPM decline detected',
-    body:'<p>BPM fell by <b>{drop}</b> in a single cardiac cycle. That '+
-      'crossed the threshold the unit\'s review subsystem watches for — '+
-      'a natural decline never drops that fast.</p>'+
-      '<p>The change in BPM was too quick, it triggered the alert. '+
-      'Perhaps there is something in the docs on one of the servers '+
-      'about how the failsafe works, and what kind of rate changes it '+
-      'considers "unsafe". Coax the rate down a little at a time '+
-      'instead of jamming it.</p>'+
-      '<p class="small" style="color:var(--dim)">try  '+
-      '<code>cd n_rate</code>  then  <code>cat rate-controller.txt</code></p>',
+    title:'// they caught a sharp drop',
+    body:'<p>Talk to me. BPM just dropped by <b>{drop}</b> in one cycle '+
+      '— hearts don\'t give out like that, and the unit knows it. That '+
+      'reads as tampering. They flagged us.</p>'+
+      '<p>Look, you can\'t slam the rate down and walk away. The implant '+
+      'is watching for sharp moves and yours was a textbook trigger. '+
+      'You need to coax it — small steps each cycle, no jolts. Their '+
+      'own docs must have the tracking described somewhere — see what '+
+      'documentation you can find on the server.</p>',
   },
   flagged:{
-    title:'// sustained tampering on the cardiac log',
-    body:'<p>The trace meter held at FLAGGED long enough for the unit '+
-      'to escalate. Each cycle where your requested setpoint sat far '+
-      'from the actual reading added evidence to the cardiac log; the '+
-      'log was loud enough that the review subsystem caught up to it.</p>'+
-      '<p>Move setpoints in small steps. The failsafe will still '+
-      'correct sharp moves on its own — but every correction it makes '+
-      'is a line in the log. Quieter is better.</p>'+
-      '<p class="small" style="color:var(--dim)">try  '+
-      '<code>cd n_rate</code>  then  <code>cat emergency-settings.cfg</code></p>',
+    title:'// the trace meter pegged',
+    body:'<p>They\'ve been watching you the whole run. The trace meter '+
+      'sat pinned in the red long enough for the review subsystem to '+
+      'escalate, and they pinned us.</p>'+
+      '<p>Every cycle where you asked for a rate way off from what the '+
+      'heart was actually doing, the cardiac log noticed, and fixed it '+
+      'before it ever hit the patient — did you see the telemetry '+
+      'flicker? Every correction the failsafe had to make wrote another '+
+      'line in that log. It got loud enough to catch. Be subtler, '+
+      'smaller steps. There will be a config file somewhere for the '+
+      'emergency failsafe — see if you can find it. Maybe it\'ll tell '+
+      'you how to get around it.</p>',
   },
 };
 let cascadeAbort=null, cascadeTrace=0;
@@ -1929,19 +2091,9 @@ const nsGreynet={
   },
   async writeConfig(id,file,txt){
     if(!apiBreached(id)) throw new Error('writeConfig: '+id+' not breached');
-    if(file==='emergency-settings.cfg'){
-      const en=/FAILSAFE_ENABLED\s*=\s*(true|false)/i.exec(txt);
-      const bk=/BACKUP_SETPOINT\s*=\s*(-?\d+(?:\.\d+)?)/i.exec(txt);
-      if(!en||!bk) throw new Error('writeConfig: parse error');
-      failsafe.enabled=/true/i.test(en[1]);failsafe.backup=clamp(+bk[1],0,200);
-      return true;
-    }
-    if(file==='drift-comp.cfg'){
-      const dc=/DRIFT_COMPENSATION\s*=\s*(enabled|disabled)/i.exec(txt);
-      if(!dc) throw new Error('writeConfig: parse error');
-      conduction.drift=/enabled/i.test(dc[1]);return true;
-    }
-    throw new Error('writeConfig: '+file+' is not a config file');
+    const r=parseConfig(file,txt);
+    if(!r.ok) throw new Error('writeConfig: '+r.error);
+    return true;
   },
   // --- engagement ---
   async deployLibrary(src){
@@ -1956,9 +2108,10 @@ const nsGreynet={
   // --- monitoring ---
   telemetry(){ return {bpm:hw.bpm,rhythmVar:hw.rhythmVar,amp:hw.amp,cond:hw.cond,tick}; },
   signatureMet(){ return checkSignature().win; },
-  traceBand(){ return reviewVal>66?'flagged':reviewVal>33?'scrutiny':'nominal'; },
+  traceBand(){ return reviewVal>TUNING.TRACE_FLAGGED?'flagged'
+    :reviewVal>TUNING.TRACE_SCRUTINY?'scrutiny':'nominal'; },
   ticksElapsed(){ return tick; },
-  tickBudget(){ return 2400; },
+  tickBudget(){ return TUNING.TICK_BUDGET; },
 };
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
@@ -2321,6 +2474,8 @@ function saveProgress(){
       scriptUnlocked,
       best,
       cwd,
+      hardMode,                  // chosen on first visit, sticky thereafter
+      splashVersion: splashSeen ? SPLASH_VERSION : undefined,
     };
     localStorage.setItem(SAVE_KEY,JSON.stringify(data));
   }catch(e){ /* storage unavailable / full — fail quietly */ }
@@ -2345,6 +2500,12 @@ function loadProgress(){
   // unlock + bests
   if(data.scriptUnlocked){ scriptUnlocked=true; reflectUnlock(); }
   if(data.best) best=data.best;
+  // difficulty — older saves predate this field and default to false
+  if(typeof data.hardMode==='boolean') hardMode=data.hardMode;
+  // splash gating — only count as "seen" if the save's version matches
+  // the CURRENT splash version. Older saves (or saves before this field
+  // existed) fall through to splashSeen=false, which forces a re-show.
+  if(data.splashVersion===SPLASH_VERSION) splashSeen=true;
   // restore cwd — only if the node still exists and is breached
   if(data.cwd==='/') setCwd('/');
   else if(typeof data.cwd==='string'){
@@ -2364,17 +2525,196 @@ function wipeProgress(){
 window.addEventListener('beforeunload',saveProgress);
 
 // ---- boot ----------------------------------------------------------
+// Splash flow on a true cold start (no save):
+//   scrim-diff  → player picks difficulty
+//   scrim-intro → handler brief
+//   game        → terminal focus
+// On a returning visit the save itself signals "splash already seen", so
+// we skip both modals and drop the player straight back into the game.
 $('deploy').onclick=()=>{ $('scrim-intro').classList.add('hide');$('termin').focus();
   requestAnimationFrame(relayoutHeart); };
+// Whether the next chooseDifficulty() should chain into the handler
+// brief afterwards. true on the cold-start path (full splash flow);
+// false when the diff modal was opened from the "change difficulty"
+// link mid-game — those players just want to switch, not see the brief
+// again.
+let chainIntroAfterDiff=false;
+function chooseDifficulty(hard){
+  hardMode=hard;
+  splashSeen=true;                      // they've completed the splash flow
+  renderObjectives();
+  saveProgress();                       // commit choice + splash-seen flag
+  $('scrim-diff').classList.add('hide');
+  if(chainIntroAfterDiff){
+    openHandlerIntro(true);
+  }else{
+    $('termin').focus();
+  }
+  chainIntroAfterDiff=false;
+}
+$('diff-default').onclick=()=>chooseDifficulty(false);
+$('diff-hard').onclick   =()=>chooseDifficulty(true);
+
+// True when any modal (scrim) is currently up. The strip is physically
+// covered by an open scrim so the meta links can't be clicked normally,
+// but a keyboard-focused button, a future layout change, or a dev-tools
+// click could still fire the handler. The guards below use this so we
+// never stack a second scrim on top of an active one (which could
+// clobber in-progress work in breach / nano / the editor modals).
+function anyModalOpen(){
+  return !!document.querySelector('.scrim:not(.hide)');
+}
+// Meta links in the top strip — let the player re-open the difficulty
+// picker or replay the handler brief without wiping their save. The diff
+// modal skips its typing animation on a re-open; intro is a plain show.
+$('link-diff').onclick =()=>{ if(anyModalOpen()) return; openDiffModal(false); };
+$('link-intro').onclick=()=>{ if(anyModalOpen()) return;
+  openHandlerIntro(true); };
+
+// Type `lines` into `el` one after another, with a typing caret on the
+// active line. Same feel as the detection cascade but quicker — reads as
+// someone tap-tapping characters in, not laboured drama. `onDone` fires
+// once the last line finishes.
+//   per-character cadence: ~3-9ms (jitter keeps it from feeling robotic)
+//   inter-line pause:      240ms
+function typeLines(el, lines, onDone){
+  el.textContent='';
+  let li=0;
+  const nextLine=()=>{
+    if(li>=lines.length){ if(onDone) onDone(); return; }
+    const span=document.createElement('span');
+    span.classList.add('caret');
+    el.appendChild(span);
+    const line=lines[li++];
+    let i=0;
+    const step=()=>{
+      if(i<line.length){
+        span.textContent=line.slice(0,++i);
+        setTimeout(step, 3+Math.random()*6);
+      }else{
+        span.classList.remove('caret');
+        el.appendChild(document.createTextNode('\n'));
+        setTimeout(nextLine, 240);
+      }
+    };
+    step();
+  };
+  nextLine();
+}
+
+const DIFF_INTRO_LINES=[
+  '> uplink established',
+  '> welcome to GREYNET — choose your difficulty, operative',
+];
+
+// The handler's briefing paragraphs. Each one is typed in as PLAIN text
+// (so the type animation is unencumbered by inline markup), then on
+// completion the paragraph is swapped to its RICH version with the bold
+// / italic / code emphasis. The visual swap is invisible because in this
+// theme <b> only changes colour, not weight — so the metrics don't shift.
+const HANDLER_INTRO_PARAS=[
+  {plain:"Listen up. Your client wants the target dead, and the easy part is they've already paid for the how — cybernetic heart implant. Plenty of ways to make it stop.",
+   rich :"Listen up. Your client wants the target dead, and the easy part is they've already paid for the <i>how</i> — <b>cybernetic heart implant</b>. Plenty of ways to make it stop."},
+  {plain:"Here's the catch. Every cycle of that implant gets logged. When the body turns up, the cardiac log gets read, and if it screams TAMPERED then we've just sold the client a bigger investigation, not a death. The job isn't stopping the heart — the job is doing it quietly.",
+   rich :"Here's the catch. Every cycle of that implant gets logged. When the body turns up, the cardiac log gets read, and if it screams TAMPERED then we've just sold the client a bigger investigation, not a death. The job isn't stopping the heart — the job is doing it <b>quietly</b>."},
+  {plain:"Read your objectives on the right of the screen. Properly. Treat this like a simple kill and you'll trip every alarm in the unit. We've had contractors come back through that door because they didn't take that panel seriously — don't be one of them.",
+   rich :"<b>Read your objectives on the right of the screen.</b> Properly. Treat this like a simple kill and you'll trip every alarm in the unit. We've had contractors come back through that door because they didn't take that panel seriously — don't be one of them."},
+  {plain:"We've jacked you into the implant's root node. You should see the four subsystems on the map. The terminal at the bottom is your way in.",
+   rich :"We've jacked you into the implant's root node. You should see the four subsystems on the map. The terminal at the bottom is your way in."},
+  {plain:"From here you're on your own. Not telling you how to do your job — but if it were me, I'd type help first.",
+   rich :"From here you're on your own. Not telling you how to do your job — but if it were me, I'd type <code class=\"k\">help</code> first."},
+];
+
+// Open the handler brief modal. With animate=true the paragraphs type
+// in one after another (quick char-by-char with a short pause between
+// each), then the trailing prototype footer and JACKED IN button fade
+// in. With animate=false the modal opens with the full rich content
+// already in place — used so we have an instant path if ever needed.
+//
+// introAnimToken lets a fresh open invalidate any prior in-flight
+// animation: each setTimeout step checks that the token it captured is
+// still current and bails out otherwise. So clicking "replay intro"
+// while a previous animation is mid-typing just restarts cleanly.
+let introAnimToken=0;
+function openHandlerIntro(animate){
+  const myToken=++introAnimToken;
+  $('scrim-intro').classList.remove('hide');
+  const body=$('intro-body');
+  const afters=document.querySelectorAll('#scrim-intro .intro-after');
+  if(!animate){
+    body.innerHTML=HANDLER_INTRO_PARAS.map(p=>'<p>'+p.rich+'</p>').join('');
+    afters.forEach(e=>e.classList.add('show'));
+    return;
+  }
+  body.innerHTML='';
+  afters.forEach(e=>e.classList.remove('show'));
+  let pi=0;
+  const nextPara=()=>{
+    if(introAnimToken!==myToken) return;        // newer open invalidated us
+    if(pi>=HANDLER_INTRO_PARAS.length){
+      afters.forEach(e=>e.classList.add('show'));
+      return;
+    }
+    const para=HANDLER_INTRO_PARAS[pi++];
+    const p=document.createElement('p');
+    p.classList.add('caret');
+    body.appendChild(p);
+    let i=0;
+    const step=()=>{
+      if(introAnimToken!==myToken) return;
+      if(i<para.plain.length){
+        p.textContent=para.plain.slice(0,++i);
+        setTimeout(step, 3+Math.random()*6);    // ~3-9ms/char — quick tap
+      }else{
+        p.classList.remove('caret');
+        p.innerHTML=para.rich;                  // swap in emphasis colours
+        setTimeout(nextPara, 260);              // brief pause before next
+      }
+    };
+    step();
+  };
+  nextPara();
+}
+// Show the difficulty modal. With animate=true the operative-connection
+// lines stream in and the body underneath is held hidden until they're
+// done; this is the cold-start path and the handler brief follows the
+// pick. With animate=false (the "change difficulty" link in the strip)
+// the modal opens with everything already in place and picking just
+// returns to the game.
+function openDiffModal(animate){
+  const body=$('diff-body'), out=$('diff-typeout');
+  chainIntroAfterDiff=animate;
+  $('scrim-diff').classList.remove('hide');
+  if(animate){
+    body.classList.add('preroll');
+    typeLines(out, DIFF_INTRO_LINES, ()=>body.classList.remove('preroll'));
+  }else{
+    body.classList.remove('preroll');
+    out.textContent=DIFF_INTRO_LINES.join('\n');
+  }
+}
+
 freshPatient();
 const restored=loadProgress();
+renderObjectives();                      // panel must reflect restored mode
 requestAnimationFrame(relayoutHeart);
 tprint('GREYNET link established — contract GN-2241 "Quiet Hours" loaded','ok');
+// Terminal welcome lines — always printed; sit behind any splash modal
+// and are waiting once the player clears it.
 if(restored){
   tprint('// progress restored from your last session — type  scan  to review','ok');
   tprint('// (type  newgame  to wipe the save and start fresh)','d');
 }else{
   tprint('type  help  for commands, or  scan  to see the target.','d');
+}
+
+// Splash gating. SPLASH_VERSION lets us force a one-time re-show for
+// every existing user when the briefing changes; here, anyone whose
+// save predates the new splash gets it once.
+if(!splashSeen){
+  openDiffModal(true);
+}else{
+  $('termin').focus();
 }
 
 // ---- idle heartbeat — the heart ALWAYS beats -----------------------
@@ -2385,7 +2725,7 @@ setInterval(()=>{
   if(running) return;            // sim owns the beat while a routine runs
   beatPhase+=hw.bpm/600;
   drawHeart();
-},55);
+},TUNING.TICK_MS);
 </script>
 </body>
 </html>
