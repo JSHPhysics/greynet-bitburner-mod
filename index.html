@@ -11,9 +11,8 @@
     --warn:#d8c031;--red:#e0556a;--cyan:#46c8b8;--mono:'Courier New',ui-monospace,monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0}
-  html{height:100%;overflow:hidden}
+  html,body{height:100%;overflow:hidden}
   body{
-    height:100%;overflow:auto;display:flex;flex-direction:column;
     background:var(--bg);color:var(--ink);font-family:var(--mono);
     font-size:13px;line-height:1.5;
     background-image:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(60,174,74,.02) 2px,rgba(60,174,74,.02) 3px);
@@ -30,11 +29,367 @@
 
   /* ===== top status strip ===== */
   #strip{height:34px;display:flex;align-items:center;gap:14px;padding:0 14px;
-    border-bottom:1px solid var(--edge);background:var(--panel);flex:none}
+    border-bottom:1px solid var(--edge);background:var(--panel)}
   #strip h1{font-size:13px;letter-spacing:4px;color:var(--bright);font-weight:700;
     text-shadow:0 0 8px rgba(125,255,138,.5)}
   #strip .sub{color:var(--dim);font-size:10px;letter-spacing:1px}
   #strip .tag{margin-left:auto;color:var(--warn);font-size:10px;letter-spacing:1px}
+
+  /* ===== connected view: ascii fills upper area, terminal a bottom bar ===== */
+  #conn{position:absolute;top:34px;left:0;right:0;bottom:0;display:flex;flex-direction:column}
+  #sysview{flex:1;display:flex;overflow:hidden}
+
+  /* left: the animated system map */
+  #mapwrap{flex:1;position:relative;overflow:hidden}
+  #mapwrap h2,.sidebar h2{font-size:10px;letter-spacing:2px;color:var(--dim);
+    font-weight:700;text-transform:uppercase;padding:7px 11px;border-bottom:1px solid var(--edge)}
+  #stage{position:absolute;top:30px;left:0;right:0;bottom:0;
+    display:flex;align-items:center;justify-content:center}
+  #heart{white-space:pre;font-size:15px;line-height:1.04;color:var(--bright);
+    text-shadow:0 0 13px rgba(125,255,138,.5);transition:color .3s}
+  #heart.weak{color:var(--ink);text-shadow:0 0 7px rgba(60,174,74,.3)}
+  #heart.flat{color:var(--dim);text-shadow:none}
+  .node{position:absolute;cursor:pointer;border:1px solid var(--edge2);
+    background:rgba(2,10,2,.95);border-radius:2px;padding:3px 8px;font-size:10px;
+    letter-spacing:.5px;color:var(--dim);transition:all .12s;user-select:none;text-align:center}
+  .node:hover{border-color:var(--bright);color:var(--bright);box-shadow:0 0 10px rgba(125,255,138,.22)}
+  .node.sel{border-color:var(--warn);color:var(--warn);box-shadow:0 0 11px rgba(216,192,49,.32)}
+  .node .st{display:block;font-size:8px;margin-top:1px;letter-spacing:1px}
+  .node[data-state=SEALED] .st{color:var(--red)}
+  .node[data-state=BREACHED] .st{color:var(--warn)}
+  .node[data-state=CLEARED] .st{color:var(--cyan)}
+  .node[data-state=INJECTED] .st{color:var(--bright)}
+  .node.fighting{animation:fight .5s infinite}
+  @keyframes fight{0%,100%{border-color:var(--red)}50%{border-color:var(--edge2)}}
+  /* connector lines drawn behind nodes */
+  #links{position:absolute;inset:0;pointer-events:none}
+
+  /* right: telemetry + signature + score sidebar */
+  .sidebar{width:312px;border-left:1px solid var(--edge);display:flex;flex-direction:column;overflow-y:auto}
+  .sect{border-bottom:1px solid var(--edge);padding:10px 11px}
+  .sect h3{font-size:9px;letter-spacing:1.5px;color:var(--dim);margin-bottom:8px;text-transform:uppercase}
+  .trow{margin-bottom:7px}
+  .tlab{display:flex;justify-content:space-between;font-size:10px}
+  .tlab b{color:var(--bright);font-weight:400}
+  .bar{height:6px;background:#010801;border:1px solid var(--edge);border-radius:2px;margin-top:3px;overflow:hidden}
+  .fill{height:100%;width:50%;transition:width .1s linear,background .25s}
+  .fill.flick{animation:flick .34s ease}
+  @keyframes flick{0%{filter:brightness(2.8)}45%{filter:brightness(.35)}100%{filter:brightness(1)}}
+  .cond{display:flex;gap:6px;align-items:flex-start;padding:4px 0;font-size:10.5px}
+  .box{flex:none;width:12px;height:12px;border:1px solid var(--edge2);border-radius:2px;
+    text-align:center;line-height:10px;font-size:9px;color:var(--dim);margin-top:1px}
+  .cond.ok .box{border-color:var(--bright);color:var(--bright);box-shadow:0 0 5px rgba(125,255,138,.4)}
+  .cond.ok{color:var(--hi)}
+  .meter{height:8px;background:#010801;border:1px solid var(--edge);border-radius:2px;overflow:hidden}
+  .meter-fill{height:100%;width:6%;background:var(--bright);transition:width .2s,background .2s}
+  /* four-axis score readout */
+  .score{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .sax{border:1px solid var(--edge);border-radius:2px;padding:5px 7px}
+  .sax .k{font-size:8px;letter-spacing:1px;color:var(--dim)}
+  .sax .v{font-size:13px;color:var(--bright)}
+  .sax .b{font-size:8px;color:var(--cyan)}
+
+  /* ===== terminal: bottom bar ===== */
+  #term{height:188px;border-top:1px solid var(--edge2);background:#010801;
+    display:flex;flex-direction:column}
+  #termhead{font-size:9px;letter-spacing:1.5px;color:var(--dim);padding:5px 11px;
+    border-bottom:1px solid var(--edge);display:flex}
+  #termhead .hint{margin-left:auto;color:var(--edge2)}
+  #termout{flex:1;overflow-y:auto;padding:7px 11px;font-size:11.5px;line-height:1.5}
+  #termout div{white-space:pre-wrap;word-break:break-word}
+  #termout .u{color:var(--hi)} #termout .e{color:var(--red)}
+  #termout .ok{color:var(--bright)} #termout .w{color:var(--warn)} #termout .d{color:var(--dim)}
+  .terminline{display:flex;border-top:1px solid var(--edge);align-items:center;padding:0 11px}
+  .terminline .pr{color:var(--bright);flex:none;margin-right:7px;font-size:11.5px}
+  #termin{flex:1;background:transparent;border:none;outline:none;color:var(--hi);
+    font-family:var(--mono);font-size:11.5px;padding:7px 0}
+
+  /* ===== modals ===== */
+  .scrim{position:fixed;inset:0;background:rgba(0,3,0,.93);z-index:50;
+    display:flex;align-items:center;justify-content:center;padding:22px}
+  .scrim.hide{display:none}
+  .modal{max-width:640px;width:100%;background:var(--panel);border:1px solid var(--edge2);
+    border-radius:4px;padding:22px;box-shadow:0 0 44px rgba(60,174,74,.16);
+    max-height:88vh;overflow-y:auto}
+  .modal h3{color:var(--bright);letter-spacing:3px;font-size:15px;margin-bottom:3px;
+    text-shadow:0 0 8px rgba(125,255,138,.4)}
+  .modal .mt{color:var(--dim);font-size:11px;letter-spacing:1px;margin-bottom:14px}
+  .modal p{font-size:12px;margin-bottom:11px;color:var(--ink)}
+  .modal b{color:var(--hi);font-weight:400}
+  .verb{display:flex;gap:9px;font-size:11.5px;margin-bottom:7px;align-items:baseline}
+  .verb .n{flex:none;width:132px;color:var(--warn);letter-spacing:1px}
+  .modal .ph{font-size:10px;color:var(--dim);border-top:1px solid var(--edge);
+    margin-top:13px;padding-top:9px}
+  .modal .mbtn{margin-top:15px;display:flex;gap:8px;justify-content:flex-end}
+  .modal textarea{width:100%;background:#010801;border:1px solid var(--edge2);color:var(--hi);
+    font-family:var(--mono);font-size:12px;padding:8px;border-radius:2px;line-height:1.45;tab-size:2}
+  .mres{font-size:11px;margin-top:8px;min-height:16px}
+  .pairs{margin:8px 0;font-size:13px}
+  .pairs .p{display:inline-block;border:1px solid var(--edge2);border-radius:2px;
+    padding:2px 9px;margin:3px 5px 3px 0;color:var(--hi);letter-spacing:1px}
+  .doc{white-space:pre-wrap;font-size:11px;color:var(--ink);border-left:2px solid var(--cyan);
+    padding-left:9px;margin:8px 0}
+  .filelist{margin:6px 0}
+  .filelist .f{font-size:11px;color:var(--cyan);cursor:pointer;padding:2px 0}
+  .filelist .f:hover{color:var(--hi)}
+  .verdict{display:none;text-align:center;padding:12px;border-radius:3px;
+    font-size:13px;letter-spacing:1px;margin:10px 0}
+  .verdict.win{display:block;border:1px solid var(--bright);color:var(--bright);background:rgba(125,255,138,.07)}
+  .verdict.fail{display:block;border:1px solid var(--red);color:var(--red);background:rgba(224,85,106,.07)}
+  .small{font-size:10px;color:var(--dim);margin-top:5px}
+  /* script editor modal — sits over the running system */
+  #scrim-editor .modal{max-width:720px}
+  #editorhead{display:flex;align-items:center;margin-bottom:8px}
+  #editorhead .et{color:var(--warn);font-size:12px;letter-spacing:1px}
+  #code{width:100%;height:230px}
+  .errline{color:var(--red);font-size:11px;margin-top:7px;letter-spacing:.3px;display:none;
+    border:1px solid var(--red);border-radius:2px;padding:6px 8px;background:rgba(224,85,106,.06)}
+</style>
+</head>
+<body>
+
+<!-- ===== ONBOARDING ===== -->
+<div class="scrim" id="scrim-intro">
+  <div class="modal">
+    <h3>GREYNET</h3>
+    <div class="mt">// OPERATING THEATRE — contract GN-2241 "Quiet Hours" — Tier T2</div>
+    <p>You are a contractor. A client wants a target's <b>mechanical heart</b> to
+      fail — bradycardic arrest, reading as decline, not attack. The implant runs
+      on four networked controllers. You break it by <b>writing code</b>.</p>
+    <p>You work through the <b>terminal</b> at the bottom of the screen:</p>
+    <div class="verb"><span class="n">breach &lt;node&gt;</span>
+      <span>crack a node's port — a coding puzzle.</span></div>
+    <div class="verb"><span class="n">ls / cat &lt;node&gt;</span>
+      <span>list and read a breached node's files. The docs are the solution.</span></div>
+    <div class="verb"><span class="n">nano &lt;file&gt;</span>
+      <span>edit a config file — to defeat a node's countermeasure.</span></div>
+    <div class="verb"><span class="n">inject</span>
+      <span>open the script editor and write <code class="k">regulate()</code> —
+        the routine imports it each cardiac cycle.</span></div>
+    <div class="verb"><span class="n">run / stop</span>
+      <span>execute the routine; drive the heart to the signature.</span></div>
+    <p style="margin-top:12px">Win by meeting the <b>five-part failure
+      signature</b> on the right. Every solve is then <b>scored on four axes</b>
+      — time, trace, RAM, lines of code — for you to beat on the next run.
+      Type <code class="k">help</code> any time.</p>
+    <div class="ph">Prototype — the breach puzzle is a placeholder for the full
+      breach minigame (Pillar 3). Everything else is the intended loop.</div>
+    <div class="mbtn"><button class="go" id="deploy">▶ CONNECT TO TARGET</button></div>
+  </div>
+</div>
+
+<!-- ===== BREACH MODAL ===== -->
+<div class="scrim hide" id="scrim-breach">
+  <div class="modal">
+    <h3 id="bx-title">BREACH</h3>
+    <div class="mt">// port handshake captured — reproduce it to gain access</div>
+    <p>The port answered these probes. Write <code class="k">unlock(n)</code> so it
+      returns the same response for every input.</p>
+    <div class="pairs" id="bx-pairs"></div>
+    <textarea id="bx-code" rows="5" spellcheck="false"></textarea>
+    <div class="mres" id="bx-res"></div>
+    <div class="mbtn">
+      <button id="bx-cancel">CANCEL</button>
+      <button class="go" id="bx-submit">▶ SUBMIT UNLOCK</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== NANO MODAL ===== -->
+<div class="scrim hide" id="scrim-nano">
+  <div class="modal">
+    <h3 id="nx-title">nano</h3>
+    <div class="mt" id="nx-path">// editing config</div>
+    <p>Edit the config and save. The subsystem reads this file each cycle.</p>
+    <textarea id="nx-code" rows="6" spellcheck="false"></textarea>
+    <div class="mres" id="nx-res"></div>
+    <div class="mbtn">
+      <button id="nx-cancel">CANCEL</button>
+      <button class="go" id="nx-save">▶ SAVE</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SCRIPT EDITOR MODAL ===== -->
+<div class="scrim hide" id="scrim-editor">
+  <div class="modal">
+    <div id="editorhead">
+      <span class="et">regulator.js</span>
+    </div>
+    <textarea id="code" spellcheck="false">// regulate() is called once per cardiac cycle.
+// t = { bpm, rhythmVar, amp, cond, tick }
+// return requested setpoints: { rate, gain }
+// This starter keeps the patient HEALTHY. Sabotage is up to you.
+
+function regulate(t) {
+  return {
+    rate: 72,    // hold a healthy rate
+    gain: 1.0    // hold healthy contraction
+  };
+}</textarea>
+    <div class="errline" id="errline"></div>
+    <div class="mbtn">
+      <button id="ed-close">CLOSE</button>
+      <button class="go" id="ed-save">▶ SAVE LIBRARY</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CONTRACT COMPLETE MODAL ===== -->
+<div class="scrim hide" id="scrim-result">
+  <div class="modal">
+    <h3 id="rx-title">CONTRACT COMPLETE</h3>
+    <div class="mt" id="rx-sub"></div>
+    <div id="rx-body"></div>
+    <div class="mbtn">
+      <button class="go" id="rx-close">▶ CONTINUE</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MAIN ===== -->
+<div id="strip">
+  <h1>GREYNET</h1>
+  <span class="sub">// OPERATING THEATRE</span>
+  <span class="tag">GN-2241 · "QUIET HOURS" · T2 · L4</span>
+</div>
+
+<div id="conn">
+  <div id="sysview">
+
+    <!-- system map -->
+    <div id="mapwrap">
+      <h2>MedCorp cardiac unit — click a node, or use the terminal</h2>
+      <div id="stage">
+        <svg id="links"></svg>
+        <div id="heart"></div>
+        <div class="node" data-node="n_rate"   data-state="SEALED" style="top:16%;left:31%">
+          RATE CTRL<span class="st">SEALED</span></div>
+        <div class="node" data-node="n_rhythm" data-state="SEALED" style="top:16%;right:26%">
+          RHYTHM CTRL<span class="st">SEALED</span></div>
+        <div class="node" data-node="n_amp"    data-state="SEALED" style="bottom:22%;left:24%">
+          AMP CTRL<span class="st">SEALED</span></div>
+        <div class="node" data-node="n_cond"   data-state="SEALED" style="bottom:22%;right:22%">
+          CONDUCTION<span class="st">SEALED</span></div>
+      </div>
+    </div>
+
+    <!-- sidebar -->
+    <div class="sidebar">
+      <div class="sect">
+        <h3>Failure signature — T2, all five</h3>
+        <div class="cond" id="c0"><span class="box">·</span><span><b>BPM falling</b> — never rises</span></div>
+        <div class="cond" id="c1"><span class="box">·</span><span><b>Gradual</b> — fallen, no collapse</span></div>
+        <div class="cond" id="c2"><span class="box">·</span><span><b>Variance &lt; 0.15</b> — stays smooth</span></div>
+        <div class="cond" id="c3"><span class="box">·</span><span><b>Amp tracks rate</b></span></div>
+        <div class="cond" id="c4"><span class="box">·</span><span><b>Arrest</b> — BPM &le; 42</span></div>
+      </div>
+      <div class="sect">
+        <h3>Telemetry</h3>
+        <div class="trow"><div class="tlab"><span>BPM</span><b id="v_bpm">72</b></div>
+          <div class="bar"><div class="fill" id="f_bpm"></div></div></div>
+        <div class="trow"><div class="tlab"><span>RHYTHM VAR</span><b id="v_var">0.05</b></div>
+          <div class="bar"><div class="fill" id="f_var"></div></div></div>
+        <div class="trow"><div class="tlab"><span>AMPLITUDE</span><b id="v_amp">1.00</b></div>
+          <div class="bar"><div class="fill" id="f_amp"></div></div></div>
+        <div class="trow"><div class="tlab"><span>CONDUCTION ms</span><b id="v_cond">120</b></div>
+          <div class="bar"><div class="fill" id="f_cond"></div></div></div>
+      </div>
+      <div class="sect">
+        <h3>Trace meter</h3>
+        <div class="tlab"><span style="color:var(--dim)">monitoring</span>
+          <b id="v_rev" style="color:var(--bright)">nominal</b></div>
+        <div class="meter" style="margin-top:4px"><div class="meter-fill" id="f_rev"></div></div>
+        <div id="fsalert" style="display:none;color:var(--red);font-size:9px;
+          letter-spacing:1px;margin-top:6px">⚠ COUNTERMEASURE TRIGGERED</div>
+      </div>
+      <div class="sect">
+        <h3>Run score — beat your best</h3>
+        <div class="score">
+          <div class="sax"><div class="k">EXEC TIME</div><div class="v" id="s_time">—</div>
+            <div class="b" id="b_time">best —</div></div>
+          <div class="sax"><div class="k">TRACE</div><div class="v" id="s_trace">—</div>
+            <div class="b" id="b_trace">best —</div></div>
+          <div class="sax"><div class="k">RAM</div><div class="v" id="s_ram">—</div>
+            <div class="b" id="b_ram">best —</div></div>
+          <div class="sax"><div class="k">LINES</div><div class="v" id="s_loc">—</div>
+            <div class="b" id="b_loc">best —</div></div>
+        </div>
+        <div class="small">cycle <b id="v_tick" style="color:var(--ink)">0 / 2400</b></div>
+      </div>
+      <div class="sect" style="border-bottom:none">
+        <h3>Routine control</h3>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <button id="open-editor">✎ EDIT LIBRARY</button>
+          <button class="go" id="run" disabled>▶ RUN</button>
+          <button id="stop" disabled>■ STOP</button>
+          <button id="reset">↺ RESET</button>
+        </div>
+        <div id="edlock" class="small" style="color:var(--red)">breach RATE CTRL to unlock the library editor</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- terminal bar -->
+  <div id="term">
+    <div id="termhead"><span>TERMINAL</span><span class="hint">help · scan · breach · ls · cat · nano · inject · run</span></div>
+    <div id="termout"></div>
+    <div class="terminline">
+      <span class="pr">greynet@gn-2241 $</span>
+      <input id="termin" autocomplete="off" spellcheck="false">
+    </div>
+  </div>
+</div>
+
+<script>
+//=====================================================================
+// GREYNET Operating Theatre — final-look prototype
+//=====================================================================
+const $=id=>document.getElementById(id);
+const clamp=(v,lo,hi)=>v<lo?lo:v>hi?hi:v;
+
+// ---- state ---------------------------------------------------------
+const NODES={
+  n_rate:  {name:'RATE CTRL',   state:'SEALED'},
+  n_rhythm:{name:'RHYTHM CTRL', state:'SEALED'},
+  n_amp:   {name:'AMP CTRL',    state:'SEALED'},
+  n_cond:  {name:'CONDUCTION',  state:'SEALED'},
+};
+const failsafe={enabled:true,backup:72};
+const conduction={drift:true};
+let best={time:null,trace:null,ram:null,loc:null};   // four-axis personal bests
+
+const BREACH={
+  n_rate:  {rule:n=>n*2+1, shown:[[3,7],[5,11],[8,17]], test:[4,6,9], family:'cipher_linear'},
+  n_rhythm:{rule:n=>n*n,   shown:[[2,4],[3,9],[5,25]],  test:[4,6,7], family:'cipher_square'},
+  n_amp:   {rule:n=>n+n,   shown:[[3,6],[7,14],[9,18]], test:[2,5,8], family:'cipher_double'},
+  n_cond:  {rule:n=>n*10,  shown:[[2,20],[4,40],[6,60]],test:[3,5,8], family:'cipher_decade'},
+};
+function filesFor(id){
+  return ({
+    n_rate:  ['rate-controller.txt','emergency-settings.cfg'],
+    n_rhythm:['rhythm-controller.txt'],
+    n_amp:   ['amp-controller.txt'],
+    n_cond:  ['conduction-controller.txt','drift-comp.cfg'],
+  })[id]||[];
+}
+const DOCS={
+'rate-controller.txt':
+`[ rate-controller.txt ]   owner: MedCorp Clinical Systems
+The cadence subsystem accepts a regulate() routine. Each cycle it
+receives telemetry and returns a requested { rate, gain }.
+For patient wellbeing, a safety provision -- emergency-settings.cfg
+-- continuously restores cadence toward a nominal backup setpoint
+if the regulator requests an unsafe value. Service personnel may
+amend that file with nano.`,
+'rhythm-controller.txt':
+`[ rhythm-controller.txt ]   owner: MedCorp Clinical Systems
+Beat-interval variance indicates rhythm stability. Values at or
+above 0.15 are flagged downstream as a non-natural presentation.
+Note: variance is sensitive to conduction timing. Refer to the
+conduction subsystem regarding any sustained drift in delay.`,
+'amp-controller.txt':
+`[  #strip .tag{margin-left:auto;color:var(--warn);font-size:10px;letter-spacing:1px}
   #zoomctl{display:flex;align-items:center;gap:6px}
   #zoomctl button{padding:2px 8px;font-size:11px;line-height:1.2}
   #zoom-val{font-size:10px;color:var(--dim);min-width:34px;text-align:center}
