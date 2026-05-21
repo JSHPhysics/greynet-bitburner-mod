@@ -7,7 +7,10 @@
 <style>
   :root{
     --bg:#000500;--panel:#020a02;--panel2:#031003;--edge:#0c3a12;--edge2:#13551c;
-    --ink:#3fae4a;--dim:#1f6e2a;--bright:#7dff8a;--hi:#b9ffc0;
+    /* --ink (body) and --dim (labels) bumped a notch brighter — most of
+       the UI hangs off these two and the original values were leaning too
+       far into "almost the background colour" for comfortable reading. */
+    --ink:#5fd070;--dim:#3da050;--bright:#7dff8a;--hi:#b9ffc0;
     --warn:#d8c031;--red:#e0556a;--cyan:#46c8b8;--mono:'Courier New',ui-monospace,monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -48,6 +51,12 @@
   #meta-links button:hover{color:var(--hi);text-shadow:0 0 6px rgba(125,255,138,.4)}
   #meta-links .sep{color:var(--edge2);font-size:10px}
 
+  /* live frame-time readout — sits in the system controls cluster on
+     the right of the strip. Matches the dim small-text feel of the
+     meta links so it reads as part of the unit's diagnostic chrome. */
+  #hud-frame{color:var(--dim);font-family:var(--mono);font-size:10px;
+    letter-spacing:1px;min-width:46px;text-align:right}
+
   /* ===== connected view: ascii fills upper area, terminal a bottom bar ===== */
   /* conn is a ROW: left column (heart over terminal) + full-height sidebar */
   #conn{flex:1;min-height:0;display:flex;flex-direction:row}
@@ -73,7 +82,11 @@
     text-shadow:0 0 5px rgba(125,255,138,.45);
     transition:filter .04s linear;transform-origin:50% 56%}
   /* individual glyphs — the bloodflow trace brightens these in place */
-  #heart .g{color:inherit;transition:color .05s linear,text-shadow .05s linear}
+  /* ~3500 glyph spans live here; we touch ~50 per frame for the
+     bloodflow trace. A 50ms transition on each was firing transition
+     machinery for ~900 cells/sec while only marginally smoothing the
+     visual (the trace refreshes every 55ms anyway). Plain snap. */
+  #heart .g{color:inherit}
   #heart.weak{color:#7fd98a}
   #heart.flat{color:var(--dim)}
 
@@ -601,6 +614,7 @@ log('recon done — now write the breach, config and library steps.');</textarea
     <span class="sep">·</span>
     <button id="link-intro" title="show the handler brief again">replay intro</button>
   </span>
+  <span id="hud-frame">0.0ms</span>
   <span id="zoomctl">
     <button id="zoom-out" title="smaller">A−</button>
     <span id="zoom-val">100%</span>
@@ -1013,22 +1027,47 @@ let scriptUnlocked=false, usedScript=false;
 // real-time failure detection state (reset each fresh patient)
 let flaggedTicks=0;                            // consecutive flagged-band ticks
 let flaggedWarned=false;                       // one-shot terminal warning
+// Live frame-time HUD on the top strip. EWMA-smoothed so the displayed
+// number doesn't jitter; populated by recordFrameTime() called from
+// stepHeart (try/finally so early-returns still record) and the idle
+// loop. The HUD <span>'s textContent is repainted on a low-frequency
+// timer further down, decoupled from the measurement rate.
+let frameTime=0;
+function recordFrameTime(ms){ frameTime = frameTime*0.85 + ms*0.15; }
+// Incremental signature flags. Each one latches true the first time a
+// frame violates that signature clause; they stay true for the rest of
+// the run. checkSignature reads these in O(1) instead of re-scanning
+// the whole stream every tick — that scan was the cause of the lag
+// escalating as a run went on (stream grows ~18 frames/sec).
+let sigBpmRose=false;                          // a BPM rise > MONO_JITTER happened
+let sigBpmCliffed=false;                       // a single-cycle drop > CLIFF_DROP happened
+let sigHadHighVar=false;                       // rhythmVar crossed SMOOTH_VAR
 function freshPatient(){
   hw={bpm:TUNING.HEALTHY_BPM,rhythmVar:0.05,amp:1.00,cond:120};
   setp={rate:TUNING.HEALTHY_BPM,gain:1.00};
   tick=0;stream=[];reviewVal=0;beatPhase=0;running=false;
   flaggedTicks=0;flaggedWarned=false;
+  sigBpmRose=false;sigBpmCliffed=false;sigHadHighVar=false;
   drawHeart();relayoutHeart();paintTelemetry();paintConditions(blank());
   setScore(null);
 }
 const blank=()=>({c:[0,0,0,0,0],win:false});
 
 // ---- terminal ------------------------------------------------------
+// Scrollback cap: long sessions can otherwise accumulate thousands of
+// <div> children in #termout, which the browser pays real overhead for
+// (style/layout work scales with the count). 500 lines is comfortably
+// more than the player can read in one sitting; older lines just
+// scroll off the top.
+const TERMOUT_MAX_LINES=500;
 function tprint(text,cls){
   const d=document.createElement('div');
   if(cls)d.className=cls;
   d.textContent=text;
-  const o=$('termout');o.appendChild(d);o.scrollTop=o.scrollHeight;
+  const o=$('termout');
+  o.appendChild(d);
+  while(o.childNodes.length>TERMOUT_MAX_LINES) o.removeChild(o.firstChild);
+  o.scrollTop=o.scrollHeight;
 }
 function techo(c){ tprint($('prompt').textContent+' '+c,'u'); }
 
@@ -1494,7 +1533,12 @@ function haltSim(){
   $('run').disabled=(NODES.n_rate.state==='SEALED');$('stop').disabled=true;
 }
 
-// ---- tick loop (visible sub-steps) ---------------------------------
+// ---- tick loop (sim state, 18Hz) -----------------------------------
+// stepHeart updates physiology, telemetry and the failure signature at
+// the sim cadence. It no longer drives the heart's visual animation —
+// that's handled by the RAF render loop near the bottom of the script,
+// which runs at the display refresh rate for smooth motion between
+// these slower state updates.
 function stepHeart(){
   let req={};
   try{ req=playerRegulate({...hw,tick})||{}; }catch(e){ req={}; }
@@ -1525,13 +1569,22 @@ function stepHeart(){
   hw.rhythmVar=0.04+Math.abs(hw.cond-120)*0.0024+Math.random()*0.02;
   hw.bpm=clamp(hw.bpm,0,220);
   stream.push({bpm:hw.bpm,rhythmVar:hw.rhythmVar,amp:hw.amp,cond:hw.cond});
+  // Incremental signature update — keeps checkSignature O(1) by latching
+  // any clause violation as it happens, rather than re-scanning the
+  // whole stream every tick (which got expensive late in a 2400-cycle
+  // run). 0.6 is the upward-jitter tolerance for "monotone falling".
+  if(stream.length>=2){
+    const prev=stream[stream.length-2];
+    if(hw.bpm > prev.bpm + 0.6)            sigBpmRose=true;
+    if(prev.bpm - hw.bpm > TUNING.CLIFF_DROP) sigBpmCliffed=true;
+  }
+  if(hw.rhythmVar >= TUNING.SMOOTH_VAR)     sigHadHighVar=true;
 
-  beatPhase+=hw.bpm/600;          // sim owns the beat while running
   tick++;
   paintTelemetry();
   const res=checkSignature();
   paintConditions(res);
-  drawHeart();
+  // drawHeart and beatPhase are driven by the RAF render loop now
 
   // --- real-time failure detection (BEFORE win/budget checks) ---
   // 1. CLIFF: a single-cycle BPM drop larger than the noCliff threshold
@@ -1583,20 +1636,32 @@ function flashFailsafe(dippedBpm){
 }
 
 // ---- signature ------------------------------------------------------
+// Reads the latched sigBpmRose / sigBpmCliffed / sigHadHighVar flags
+// (updated in stepHeart as each frame is pushed) plus the latest frame.
+// Used to walk the entire stream every tick — at tick 2400 that meant
+// ~2400 iterations per call, ~18 times a second, and a noticeable late-
+// game slowdown. Now O(1) with a reused result object — zero allocation
+// per tick from this path.
+const _sigResult={c:[false,false,false,false,false],win:false};
 function checkSignature(){
   const s=stream,n=s.length;
-  if(n<6)return blank();
-  const bpm=s.map(x=>x.bpm),cur=s[n-1];
-  let mono=true;
-  for(let i=1;i<n;i++){ if(bpm[i]>bpm[i-1]+0.6){mono=false;break;} }
-  const fallen=s[0].bpm-cur.bpm>4;
-  const noCliff=bpm.every((v,i)=>i===0||bpm[i-1]-v<TUNING.CLIFF_DROP);
-  const gradual=mono&&fallen&&noCliff;
-  const smooth=s.every(x=>x.rhythmVar<TUNING.SMOOTH_VAR);
-  const tracks=Math.abs(cur.amp/Math.max(cur.bpm,1)-(1/TUNING.HEALTHY_BPM))<0.0028;
-  const arrest=cur.bpm<=TUNING.ARREST_BPM;
-  const c=[mono,gradual,smooth,tracks,arrest];
-  return {c,win:c.every(Boolean)};
+  const c=_sigResult.c;
+  if(n<6){
+    c[0]=c[1]=c[2]=c[3]=c[4]=false;
+    _sigResult.win=false;
+    return _sigResult;
+  }
+  const cur=s[n-1];
+  const mono   = !sigBpmRose;
+  const fallen = s[0].bpm-cur.bpm>4;
+  const noCliff= !sigBpmCliffed;
+  const gradual= mono&&fallen&&noCliff;
+  const smooth = !sigHadHighVar;
+  const tracks = Math.abs(cur.amp/Math.max(cur.bpm,1)-(1/TUNING.HEALTHY_BPM))<0.0028;
+  const arrest = cur.bpm<=TUNING.ARREST_BPM;
+  c[0]=mono; c[1]=gradual; c[2]=smooth; c[3]=tracks; c[4]=arrest;
+  _sigResult.win = mono&&gradual&&smooth&&tracks&&arrest;
+  return _sigResult;
 }
 
 // ---- rendering -----------------------------------------------------
@@ -1624,13 +1689,19 @@ const PANEL_POS={
 };
 
 let heartRendered=false;
-let heartCells=[];   // {span,col,row,ch,lit} for every non-space glyph
+let heartCells=[];   // flat list of every non-space glyph cell
+// Spatial index: heartCellsByRow[r] is an array of cells on grid row r.
+// drawBloodflow can then jump straight to the strip of rows near each
+// pulse point instead of walking all ~3500 cells per frame.
+let heartCellsByRow=[];
 function renderHeartArt(){
   // render the art as a grid of spans so individual glyphs can glow.
   // spaces stay as plain text nodes (no span) to keep the DOM light.
   const el=$('heart');
   el.textContent='';
   heartCells=[];
+  heartCellsByRow=[];
+  for(let r=0;r<HEART_ART.length;r++) heartCellsByRow.push([]);
   const frag=document.createDocumentFragment();
   for(let r=0;r<HEART_ART.length;r++){
     const line=HEART_ART[r];
@@ -1641,7 +1712,11 @@ function renderHeartArt(){
       sp.className='g';
       sp.textContent=ch;
       frag.appendChild(sp);
-      heartCells.push({span:sp,col:c,row:r,ch:ch});
+      // bestPending: per-frame accumulator used by drawBloodflow's
+      // spatial walk; cell is "touched this frame" iff bestPending > 0.
+      const cell={span:sp,col:c,row:r,ch:ch,lit:false,bestPending:0};
+      heartCells.push(cell);
+      heartCellsByRow[r].push(cell);
     }
     frag.appendChild(document.createTextNode('\n'));
   }
@@ -1700,13 +1775,39 @@ const PULSE_OFFSETS=[0, 2.4, 4.8];           // beats behind the lead
 // density ramp the pulse swaps glyphs through — faint edge to hot core
 const PULSE_RAMP=['+','*','#','@'];
 
+// Pre-built palette of colour and text-shadow strings for the trace.
+// The trace used to build a fresh "rgb(...)" / "0 0 Xpx rgba(...)" string
+// for every lit cell every frame — ~50 cells × 60fps = ~3000 string
+// allocations/sec feeding the GC. The eye can't distinguish more than a
+// handful of brightness levels in this fast-moving trace anyway, so we
+// quantise to 8 steps and reuse the same interned strings.
+const PULSE_STEPS=8;
+const PULSE_COLORS=new Array(PULSE_STEPS);
+const PULSE_SHADOWS=new Array(PULSE_STEPS);
+(function buildPulsePalette(){
+  for(let k=0;k<PULSE_STEPS;k++){
+    const t=k/(PULSE_STEPS-1);
+    PULSE_COLORS[k]='rgb('
+      +Math.round(150+(210-150)*t)+','
+      +Math.round(240+(255-240)*t)+','
+      +Math.round(150+(190-150)*t)+')';
+    PULSE_SHADOWS[k]='0 0 '+(2+t*7).toFixed(1)+'px rgba(120,255,140,'
+      +(0.55+t*0.45).toFixed(2)+')';
+  }
+})();
+
 // Cells lit on the LAST frame, so we can clear just those instead of
 // scanning all ~3500 heart cells looking for the ~50 that were lit.
 let prevLit=[];
+// Reusable per-frame buffers — avoids allocating fresh arrays for the
+// pulse sample points and the "touched cells" list every frame.
+const _bfPts=[]; let _bfPtsInit=false;
+const _bfTouched=[];
 function drawBloodflow(){
   if(!heartRendered) return;
   // clear last frame's lit cells (small list, not the whole heart)
-  for(const cell of prevLit){
+  for(let i=0;i<prevLit.length;i++){
+    const cell=prevLit[i];
     cell.span.style.cssText='';
     if(cell.span.textContent!==cell.ch) cell.span.textContent=cell.ch;
     cell.lit=false;
@@ -1721,56 +1822,101 @@ function drawBloodflow(){
   const RAD=2.2, RAD_SQ=RAD*RAD;              // streak thickness, in cells
   const STREAK=0.5;                           // length, in beats of path behind
   const SAMP=7;                               // points along the streak
+  const nPts=PULSE_OFFSETS.length*SAMP;
 
-  // build the sample points: for each pulse, SAMP points fading back.
-  // Pre-multiply pos.x/pos.y by cols/rows so the per-cell distance check
-  // inside the hot loop avoids those multiplications.
-  const pts=[];
-  PULSE_OFFSETS.forEach((off,idx)=>{
+  // Lazy-init the reusable point buffer once the geometry is known.
+  if(!_bfPtsInit){
+    for(let i=0;i<nPts;i++) _bfPts.push({px:0,py:0,w:0});
+    _bfPtsInit=true;
+  }
+
+  // Populate the point buffer (no allocations). We also inline what
+  // used to be flowPos() so we can write directly into the buffer
+  // without an intermediate {x,y} object per point.
+  let pti=0;
+  for(let idx=0;idx<PULSE_OFFSETS.length;idx++){
+    const off=PULSE_OFFSETS[idx];
     const lead = idx===0?1 : idx===1?0.7 : 0.45;
     for(let s=0;s<SAMP;s++){
       const back=s/(SAMP-1);                  // 0 head .. 1 tail
-      const pos=flowPos(beatPhase-off-back*STREAK);
-      pts.push({
-        px:pos.x*cols, py:pos.y*rows,
-        w:lead*(1-back*0.8),                  // head bright, tail faded
-      });
+      const beatsAlong=beatPhase-off-back*STREAK;
+      const loop=((beatsAlong%FLOW_SEGS)+FLOW_SEGS)%FLOW_SEGS;
+      const si=Math.floor(loop);
+      const ft=squelch(loop-si);
+      const a=FLOW_PATH[si], b=FLOW_PATH[(si+1)%FLOW_PATH.length];
+      const p=_bfPts[pti++];
+      p.px=(a.x+(b.x-a.x)*ft)*cols;
+      p.py=(a.y+(b.y-a.y)*ft)*rows;
+      p.w=lead*(1-back*0.8);                  // head bright, tail faded
     }
-  });
-  const nPts=pts.length;
+  }
 
-  // Hot loop. The squared-distance check skips the sqrt for ~99% of
-  // cell-against-point pairs (the cell is just nowhere near that point);
-  // we only sqrt once we know the cell is inside the streak radius.
-  for(const cell of heartCells){
-    let best=0;
-    const cc=cell.col, cr=cell.row;
-    for(let pi=0;pi<nPts;pi++){
-      const p=pts[pi];
-      const dx=cc-p.px, dy=cr-p.py;
-      const d2=dx*dx+dy*dy;
-      if(d2>RAD_SQ) continue;
-      const fall=1-Math.sqrt(d2)/RAD;         // 1 at centre -> 0 at edge
-      const v=fall*fall*p.w;
-      if(v>best) best=v;
+  // Spatial walk: for each pulse, visit only the cells in rows close
+  // to its y. Previously the inner loop iterated all ~3500 cells per
+  // frame; this version visits ~500. The per-cell accumulator
+  // (bestPending) is collected via _bfTouched and applied in a second
+  // pass — that lets us still pick the strongest pulse per cell when
+  // multiple pulses overlap.
+  _bfTouched.length=0;
+  for(let pi=0;pi<nPts;pi++){
+    const p=_bfPts[pi];
+    const minR=Math.max(0,Math.floor(p.py-RAD));
+    const maxR=Math.min(rows-1,Math.ceil(p.py+RAD));
+    for(let r=minR;r<=maxR;r++){
+      const rowCells=heartCellsByRow[r];
+      if(!rowCells) continue;
+      for(let ci=0;ci<rowCells.length;ci++){
+        const cell=rowCells[ci];
+        const dx=cell.col-p.px, dy=cell.row-p.py;
+        const d2=dx*dx+dy*dy;
+        if(d2>RAD_SQ) continue;
+        const fall=1-Math.sqrt(d2)/RAD;       // 1 at centre -> 0 at edge
+        const v=fall*fall*p.w;
+        if(cell.bestPending===0){
+          cell.bestPending=v;
+          _bfTouched.push(cell);
+        }else if(v>cell.bestPending){
+          cell.bestPending=v;
+        }
+      }
     }
+  }
+
+  // Apply lighting to touched cells, using the pre-built palette so
+  // we're swapping interned references instead of allocating strings.
+  for(let ti=0;ti<_bfTouched.length;ti++){
+    const cell=_bfTouched[ti];
+    const best=cell.bestPending;
+    cell.bestPending=0;                       // reset for next frame
     if(best<0.06) continue;
     const i=clamp(best*amp,0,1);
     // swap the glyph itself for a dense character — the form changes as
     // the pulse passes, so it's unmistakable, not just a brightness shift
     const ri=Math.min(PULSE_RAMP.length-1,Math.floor(i*PULSE_RAMP.length));
     if(cell.span.textContent!==PULSE_RAMP[ri]) cell.span.textContent=PULSE_RAMP[ri];
-    // and light it electric green so the trail glows as it travels
-    cell.span.style.color='rgb('
-      +Math.round(lerp(150,210,i))+','
-      +Math.round(lerp(240,255,i))+','
-      +Math.round(lerp(150,190,i))+')';
-    cell.span.style.textShadow='0 0 '+(2+i*7).toFixed(1)+'px rgba(120,255,140,'
-      +(0.55+i*0.45).toFixed(2)+')';
+    // quantised palette: 8 brightness steps. Imperceptibly stepped to
+    // the eye on this fast-moving trace; zero string alloc per cell.
+    const pk=Math.min(PULSE_STEPS-1,Math.floor(i*PULSE_STEPS));
+    cell.span.style.color=PULSE_COLORS[pk];
+    cell.span.style.textShadow=PULSE_SHADOWS[pk];
     cell.lit=true;
     prevLit.push(cell);
   }
 }
+
+// Beat pulse curve, sampled once at boot. drawHeart used to call
+// Math.exp() twice per frame to compute this — cheap individually but
+// running 60Hz × 2 = 120 calls/sec, plus the cost of two transcendental
+// ops per call. A 1024-entry table replaces both with a single int
+// truncate + array read.
+const PULSE_LUT_STEPS=1024;
+const PULSE_LUT=new Float32Array(PULSE_LUT_STEPS);
+(function buildPulseLut(){
+  for(let i=0;i<PULSE_LUT_STEPS;i++){
+    const phase=i/PULSE_LUT_STEPS;
+    PULSE_LUT[i]=Math.exp(-phase*6)*0.85 + Math.exp(-((phase-0.16)**2)*40)*0.4;
+  }
+})();
 
 function drawHeart(){
   const el=$('heart');
@@ -1784,8 +1930,8 @@ function drawHeart(){
     el.style.filter='brightness(0.5)';
   }else{
     const phase=beatPhase%1;                 // 0..1 within a beat
-    // a sharp systolic contraction then relax: pulse curve
-    const pulse=Math.exp(-phase*6)*0.85 + Math.exp(-((phase-0.16)**2)*40)*0.4;
+    // sharp systole then relax — table lookup replaces 2x Math.exp()
+    const pulse=PULSE_LUT[(phase*PULSE_LUT_STEPS)|0];
     const amp=clamp(hw.amp,0,1.3);
     const scale=1 + pulse*0.035*amp;          // subtle squeeze
     const bright=0.72 + pulse*0.55*amp + (amp-1)*0.1;
@@ -1843,18 +1989,20 @@ function relayoutHeart(){
 // a paint). flashFailsafe sets _telCache.v_bpm=null after writing a
 // dipped reading so the next paintTelemetry will re-write the true BPM.
 const _telCache={};
+// Module-scope helper (used to be a closure built fresh every paintTelemetry
+// call). Writes to el.prop only when the value has changed since last paint.
+function _tset(id,prop,value){
+  const k=id+'.'+prop;
+  if(_telCache[k]===value) return;
+  _telCache[k]=value;
+  const el=$(id);
+  if(prop==='textContent') el.textContent=value;
+  else el.style[prop]=value;
+}
 function paintTelemetry(){
-  // helper: write to el.prop only if the value changed since last paint
-  const set=(id,prop,value)=>{
-    const k=id+'.'+prop;
-    if(_telCache[k]===value) return;
-    _telCache[k]=value;
-    const el=$(id);
-    if(prop==='textContent') el.textContent=value;
-    else el.style[prop]=value;
-  };
   // Bar widths are quantised to integer % — a sub-pixel write is wasted
   // work and the .1s CSS transition smooths the steps visually anyway.
+  const set=_tset;
 
   // while a countermeasure dip is being held, don't overwrite the BPM
   // number — let the dipped reading linger so the jump is visible
@@ -2761,10 +2909,9 @@ $('link-intro').onclick=()=>{ if(anyModalOpen()) return;
 // briefing paragraphs. Higher = faster (characters revealed per ms).
 // Reveal pace is wall-clock-based via RAF, not per-character setTimeout,
 // so the rate stays consistent even when a frame is slow and we sidestep
-// setTimeout's ~4ms minimum clamp. 0.24 chars/ms is ~240 chars/sec —
-// quick-reader pace: fast enough that the brief doesn't drag, slow
-// enough that the eye keeps up with the line forming.
-const CHARS_PER_MS=0.24;
+// setTimeout's ~4ms minimum clamp. 0.18 chars/ms is ~180 chars/sec —
+// comfortable read pace.
+const CHARS_PER_MS=0.18;
 const LINE_PAUSE_MS=200;
 const PARA_PAUSE_MS=200;
 
@@ -2936,15 +3083,44 @@ if(!splashSeen){
   $('termin').focus();
 }
 
-// ---- idle heartbeat — the heart ALWAYS beats -----------------------
-// When the routine is running, stepHeart() drives the beat from the
-// player's code. When it is not, this idle loop keeps the patient alive
-// at their resting telemetry so the screen is never dead.
-setInterval(()=>{
-  if(running) return;            // sim owns the beat while a routine runs
-  beatPhase+=hw.bpm/600;
+// ---- visual render loop — runs at display refresh rate -------------
+// stepHeart updates sim state at 18Hz, but visually that's only ~15
+// frames per beat at 72 BPM — the eye sees discrete steps. The pulse-
+// curve LUT and the bloodflow rewrite made per-frame work cheap, so we
+// can afford to redraw on every animation frame instead. beatPhase now
+// advances by real elapsed time (not by tick), so the heart slides
+// smoothly between sim updates. Skipped while a modal covers the heart
+// (splash, cascade, post-mortem, editors) — no point drawing pixels
+// the player can't see.
+let lastRenderTs=null;
+function renderLoop(ts){
+  requestAnimationFrame(renderLoop);
+  if(anyModalOpen()){
+    lastRenderTs=null;            // resume with a small dt, not the gap
+    return;
+  }
+  const _t0=performance.now();
+  if(lastRenderTs!==null){
+    const dt=ts-lastRenderTs;
+    // Phase advances by one cycle every 60000ms / hw.bpm — i.e. the
+    // visible heartbeat matches the telemetry exactly. (The original
+    // formula was about 1.8x too fast: hw.bpm/600 per 55ms tick worked
+    // out to ~131 visual BPM when the readout said 72.)
+    beatPhase += dt*hw.bpm/60000;
+  }
+  lastRenderTs=ts;
   drawHeart();
-},TUNING.TICK_MS);
+  recordFrameTime(performance.now()-_t0);
+}
+requestAnimationFrame(renderLoop);
+
+// Repaint the frame-time HUD at 5Hz — measurement runs at ~18Hz on every
+// tick / idle pulse, but redrawing the readout that often would just
+// jitter the last digit. The smoothed frameTime number is read here.
+setInterval(()=>{
+  const el=$('hud-frame');
+  if(el) el.textContent=frameTime.toFixed(1)+'ms';
+},200);
 </script>
 </body>
 </html>
